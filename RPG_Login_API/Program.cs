@@ -67,6 +67,17 @@ namespace RPG_Login_API
 
             var app = builder.Build();
 
+
+
+            // After build but before run, test the database connection.
+            using (var scope = app.Services.CreateScope())
+            {
+                var loginApiService = scope.ServiceProvider.GetRequiredService<LoginApiService>();
+                if (!loginApiService.CheckConnectionStatus()) return;   // Exit application if not connected.
+            }
+
+
+
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
