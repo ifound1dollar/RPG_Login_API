@@ -1,0 +1,8 @@
+﻿namespace RPG_Login_API.Utility
+{
+    public class LogUtility
+    {
+        // IMPLEMENT CUSTOM LOGGING METHODS IN THIS CLASS, LIKE EASILY PARAMETERIZING
+        //  THE LOG SEVERITY (INFO, WARNING, ERROR) AND THE SOURCE (CLASS NAME, METHOD NAME)
+    }
+}
