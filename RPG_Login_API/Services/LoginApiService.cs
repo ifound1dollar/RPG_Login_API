@@ -60,52 +60,50 @@ namespace RPG_Login_API.Services
 
         public async Task<LoginResponseModel?> UserLoginAsync(string username, string password)
         {
-            // Add same logic as API imitator, but instead reading from the database and returning a response model.
+            // TODO: ADD FAILED LOGIN IN-MEMORY TRACKER DICTIONARY, AND ASSOCIATED LOGIC HERE
+            // TODO: ADD OTHER IN-MEMORY CONTAINERS LIKE ACCESS TOKEN DICTIONARY AND ACCESS TOKEN DATA CLASSES
 
-            // NOTE: When creating our JWT Token, set the Role claim to "user" temporarily. This is not stored in
-            //  the database, and for now we will assume everyone accessing this API is a user (no admin for now).
-            // We will add an 'admin' role (which can manage user accounts) at some point in the future.
+            LoginResponseModel response;
 
-            return new LoginResponseModel()
+            // Try to find user in database. Return null if we cannot find by username or email.
+            var userAccount = await GetOneByUsernameAsync(username);
+            if (userAccount == null)
             {
-                LoginStatusCode = 0,
-                RefreshToken = "REFRESHTOKEN",
-                AccessToken = "ACCESSTOKEN"
-            };
+                userAccount = await GetOneByEmailAsync(username);
+                if (userAccount == null) return null;
+            }
+
+            // If user found, compare password using PasswordUtility class. Return null if password mismatch.
+            if (!PasswordUtility.Compare(password, userAccount.PasswordHash)) return null;
+
+            // Determine how we will process login based on account state.
+            if (!userAccount.IsEmailConfirmed || userAccount.DoesPasswordNeedReset)
+            {
+                // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
+                response = new LoginResponseModel()
+                {
+                    LoginStatusCode = (!userAccount.IsEmailConfirmed) ? 1 : 2,      // 1 if unconfirmed, else 2 for password reset
+                    RefreshToken = TokenUtility.GenerateRefreshToken(username, jwtKey, durationDays: 30),
+                };
+            }
+            else
+            {
+                // Else account state is good, so return full login with refresh token AND access token.
+                response = new LoginResponseModel()
+                {
+                    LoginStatusCode = 0,
+                    RefreshToken = TokenUtility.GenerateRefreshToken(username, jwtKey, durationDays: 30),
+                    AccessToken = TokenUtility.GenerateAccessToken(username, jwtKey, durationMinutes: 15)
+                };
+            }
+
+            // After token generation, update document in database with newly-generated refresh token.
+            // TODO: STORE REFRESH TOKEN AS HASH INSTEAD OF RAW, FOR SECURITY REASONS
+            userAccount.RefreshToken = response.RefreshToken;
+            await UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            return response;
         }
-
-        // BELOW IS JUST AN EXAMPLE REPRESENTATION
-
-        //public async Task<LoginSuccessResponseModel?> Authenticate(string username, string password)
-        //{
-        //    // Try to find user in database.
-        //    var loginModel = await apiUserLoginCollection.Find(item => item.Username == username).FirstOrDefaultAsync();
-        //    if (loginModel == null) return null;
-
-        //    // If user found, compare password using PasswordUtility class.
-        //    if (!PasswordUtility.Compare(password, loginModel.PasswordHash)) return null;
-
-        //    // Since a valid account was found, generate a valid JWT token for this user.
-        //    var tokenHandler = new JwtSecurityTokenHandler();
-        //    var tokenDescriptor = new SecurityTokenDescriptor()
-        //    {
-        //        Subject = new ClaimsIdentity(
-        //        [
-        //            new Claim(ClaimTypes.Name, username),               // We are using username, not email.
-        //            new Claim(ClaimTypes.Role, loginModel.Authority)    // Store authority from MongoDB in token.
-        //        ]),
-        //        Expires = DateTime.UtcNow.AddDays(1),       // One day lifetime.
-        //        SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(jwtKey), SecurityAlgorithms.HmacSha256Signature)
-        //    };
-
-        //    // Actually generate the token from the handler and descriptor, then convert to custom response object and return it.
-        //    var token = tokenHandler.CreateToken(tokenDescriptor);
-        //    return new LoginSuccessResponseModel()
-        //    {
-        //        Token = tokenHandler.WriteToken(token),
-        //        Authority = loginModel.Authority
-        //    };
-        //}
 
         #endregion
 
@@ -129,6 +127,12 @@ namespace RPG_Login_API.Services
             return await userAccountsCollection.Find(item => item.Username == username).FirstOrDefaultAsync();
         }
 
+        private async Task<UserAccountModel> GetOneByEmailAsync(string email)
+        {
+            // Run simple comparison on account email. Will be index in MongoDB.
+            return await userAccountsCollection.Find(item => item.Email == email).FirstOrDefaultAsync();
+        }
+
 
 
         private async Task InsertOneAsync(UserAccountModel model)
@@ -150,6 +154,12 @@ namespace RPG_Login_API.Services
             await userAccountsCollection.ReplaceOneAsync((item => item.Username == username), model);
         }
 
+        private async Task UpdateOneByEmailAsync(string email, UserAccountModel model)
+        {
+            // Replaces the existing document entirely, searching by email.
+            await userAccountsCollection.ReplaceOneAsync((item => item.Email == email), model);
+        }
+
 
 
         private async Task DeleteOneByIdAsync(string id)
@@ -160,6 +170,11 @@ namespace RPG_Login_API.Services
         private async Task DeleteOneByUsernameAsync(string username)
         {
             await userAccountsCollection.DeleteOneAsync(item => item.Username == username);
+        }
+
+        private async Task DeleteOneByEmailAsync(string email)
+        {
+            await userAccountsCollection.DeleteOneAsync(item => item.Email == email);
         }
 
         #endregion

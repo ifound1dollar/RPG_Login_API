@@ -20,6 +20,9 @@ namespace RPG_Login_API.Controllers
 
         public LoginApiController(LoginApiService service)
         {
+            // Adding the LoginApiService object as a constructor parameter utilizes ASP.NET's built-in dependency
+            //  injection system. The controller is effectively requesting the Service from the services container
+            //  configured in Program.cs.
             this.service = service;
         }
 
