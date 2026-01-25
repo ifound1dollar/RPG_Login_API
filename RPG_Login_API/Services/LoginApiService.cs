@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
+using RPG_Login_API.Data;
 using RPG_Login_API.Database;
 using RPG_Login_API.Models.MongoDB;
 using RPG_Login_API.Models.UserResponses;
@@ -15,6 +16,9 @@ namespace RPG_Login_API.Services
         // Secret JWT token key is stored outside of the project directory, and is set in-memory here on app initialization.
         private static byte[] jwtKey = [];
         public static void SetJwtKey(byte[] key) { jwtKey = key; }
+
+        // Private in-memory containers for volatile data (ex. access tokens, login attempt tracking).
+        private Dictionary<string, AccessTokenData> _accessTokens = [];     // Maps username:tokenData
 
 
 
@@ -58,25 +62,24 @@ namespace RPG_Login_API.Services
 
         #region Public: User Account Access API Logic
 
-        public async Task<LoginResponseModel?> UserLoginAsync(string username, string password)
+        public async Task<LoginResponseModel?> UserLoginFromRefreshAsync(string refreshTokenString)
         {
-            // TODO: ADD FAILED LOGIN IN-MEMORY TRACKER DICTIONARY, AND ASSOCIATED LOGIC HERE
-            // TODO: ADD OTHER IN-MEMORY CONTAINERS LIKE ACCESS TOKEN DICTIONARY AND ACCESS TOKEN DATA CLASSES
-
             LoginResponseModel response;
 
-            // Try to find user in database. Return null if we cannot find by username or email.
+            // PARSE TOKEN | Try to retrieve username and token object from the passed-in token string.
+            if (!TokenUtility.TryParseTokenString(refreshTokenString, out var username, out var token)) return null;
+
+            // FIND USER | Try to find user in database. Return null if we cannot find by username.
             var userAccount = await GetOneByUsernameAsync(username);
-            if (userAccount == null)
-            {
-                userAccount = await GetOneByEmailAsync(username);
-                if (userAccount == null) return null;
-            }
+            if (userAccount == null) return null;
 
-            // If user found, compare password using PasswordUtility class. Return null if password mismatch.
-            if (!PasswordUtility.Compare(password, userAccount.PasswordHash)) return null;
+            // COMPARE TOKEN | Now that we have found a valid user, compare the stored refresh token with this refresh token.
+            if (!TokenUtility.CompareTokens(refreshTokenString, userAccount.RefreshToken)) return null;
 
-            // Determine how we will process login based on account state.
+            // CHECK TOKEN EXPIRATION | If refresh token is valid, compare expiration.
+            if (TokenUtility.IsTokenExpired(token)) return null;
+
+            // GENERATE RESPONSE | Finally, token is confirmed fully valid so determine login response based on account state.
             if (!userAccount.IsEmailConfirmed || userAccount.DoesPasswordNeedReset)
             {
                 // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
@@ -95,9 +98,61 @@ namespace RPG_Login_API.Services
                     RefreshToken = TokenUtility.GenerateRefreshToken(username, jwtKey, durationDays: 30),
                     AccessToken = TokenUtility.GenerateAccessToken(username, jwtKey, durationMinutes: 15)
                 };
+
+                // Add access token to in-memory container, replacing any existing token for this user.
+                _accessTokens[username] = new AccessTokenData(username, response.AccessToken, durationMinutes: 15);
             }
 
-            // After token generation, update document in database with newly-generated refresh token.
+            // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
+            // TODO: STORE REFRESH TOKEN AS HASH INSTEAD OF RAW, FOR SECURITY REASONS
+            userAccount.RefreshToken = response.RefreshToken;
+            await UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            return response;
+        }
+
+        public async Task<LoginResponseModel?> UserLoginAsync(string username, string password)
+        {
+            // TODO: ADD FAILED LOGIN IN-MEMORY TRACKER DICTIONARY, AND ASSOCIATED LOGIC HERE
+
+            LoginResponseModel response;
+
+            // FIND USER | Try to find user in database. Return null if we cannot find by username or email.
+            var userAccount = await GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                userAccount = await GetOneByEmailAsync(username);
+                if (userAccount == null) return null;
+            }
+
+            // COMPARE PASSWORD | If user found, compare password using PasswordUtility class. Return null if password mismatch.
+            if (!PasswordUtility.ComparePasswordToHash(password, userAccount.PasswordHash)) return null;
+
+            // GENERATE RESPONSE | Determine how we will process login based on account state.
+            if (!userAccount.IsEmailConfirmed || userAccount.DoesPasswordNeedReset)
+            {
+                // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
+                response = new LoginResponseModel()
+                {
+                    LoginStatusCode = (!userAccount.IsEmailConfirmed) ? 1 : 2,      // 1 if unconfirmed, else 2 for password reset
+                    RefreshToken = TokenUtility.GenerateRefreshToken(username, jwtKey, durationDays: 30),
+                };
+            }
+            else
+            {
+                // Else account state is good, so return full login with refresh token AND access token.
+                response = new LoginResponseModel()
+                {
+                    LoginStatusCode = 0,
+                    RefreshToken = TokenUtility.GenerateRefreshToken(username, jwtKey, durationDays: 30),
+                    AccessToken = TokenUtility.GenerateAccessToken(username, jwtKey, durationMinutes: 15)
+                };
+
+                // Add access token to in-memory container, replacing any existing token for this user.
+                _accessTokens[username] = new AccessTokenData(username, response.AccessToken, durationMinutes: 15);
+            }
+
+            // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
             // TODO: STORE REFRESH TOKEN AS HASH INSTEAD OF RAW, FOR SECURITY REASONS
             userAccount.RefreshToken = response.RefreshToken;
             await UpdateOneByUsernameAsync(userAccount.Username, userAccount);

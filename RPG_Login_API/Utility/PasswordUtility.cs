@@ -41,7 +41,7 @@ namespace RPG_Login_API.Utility
         /// <param name="newPassword"> The raw (new) password being compared. </param>
         /// <param name="hashedPassword"> The stored password hash being compared against. </param>
         /// <returns> Whether the passed-in raw (new) password matches the stored password hash (whether the password is valid). </returns>
-        public static bool Compare(string newPassword, string hashedPassword)
+        public static bool ComparePasswordToHash(string newPassword, string hashedPassword)
         {
             // Extract iterations and base64 string by splitting on the '$' character.
             string[] split = hashedPassword.Split('$');     // First two elements are the algorithm (starts with $ so [0] is empty string).
