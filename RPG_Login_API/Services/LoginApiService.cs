@@ -8,17 +8,14 @@ using RPG_Login_API.Models.UserResponses;
 using RPG_Login_API.Utility;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 
 namespace RPG_Login_API.Services
 {
     public class LoginApiService
     {
-        // Secret JWT token key is stored outside of the project directory, and is set in-memory here on app initialization.
-        private static byte[] jwtKey = [];
-        public static void SetJwtKey(byte[] key) { jwtKey = key; }
-
         // Private in-memory containers for volatile data (ex. access tokens, login attempt tracking).
-        private Dictionary<string, AccessTokenData> _accessTokens = [];     // Maps username:tokenData
+        private readonly Dictionary<string, AccessTokenData> _accessTokens = [];    // Maps username:tokenData
 
 
 
@@ -51,7 +48,7 @@ namespace RPG_Login_API.Services
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex.Message + " Exiting.");
+                LogUtility.LogError("Startup", ex.Message);
                 return false;
             }
         }
@@ -67,7 +64,7 @@ namespace RPG_Login_API.Services
             LoginResponseModel response;
 
             // PARSE TOKEN | Try to retrieve username and token object from the passed-in token string.
-            if (!TokenUtility.TryParseTokenString(refreshTokenString, out var username, out var token)) return null;
+            if (!TokenUtility.TryReadUsernameFromTokenString(refreshTokenString, out var username)) return null;
 
             // FIND USER | Try to find user in database. Return null if we cannot find by username.
             var userAccount = await GetOneByUsernameAsync(username);
@@ -76,8 +73,8 @@ namespace RPG_Login_API.Services
             // COMPARE TOKEN | Now that we have found a valid user, compare the stored refresh token with this refresh token.
             if (!TokenUtility.CompareTokens(refreshTokenString, userAccount.RefreshToken)) return null;
 
-            // CHECK TOKEN EXPIRATION | If refresh token is valid, compare expiration.
-            if (TokenUtility.IsTokenExpired(token)) return null;
+            // ACTUALLY VALIDATE TOKEN | If refresh token is valid, compare expiration.
+            if (!TokenUtility.ValidateToken(refreshTokenString)) return null;
 
             // GENERATE RESPONSE | Finally, token is confirmed fully valid so determine login response based on account state.
             if (!userAccount.IsEmailConfirmed || userAccount.DoesPasswordNeedReset)
@@ -86,7 +83,7 @@ namespace RPG_Login_API.Services
                 response = new LoginResponseModel()
                 {
                     LoginStatusCode = (!userAccount.IsEmailConfirmed) ? 1 : 2,      // 1 if unconfirmed, else 2 for password reset
-                    RefreshToken = TokenUtility.GenerateRefreshToken(username, jwtKey, durationDays: 30),
+                    RefreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30),
                 };
             }
             else
@@ -95,8 +92,8 @@ namespace RPG_Login_API.Services
                 response = new LoginResponseModel()
                 {
                     LoginStatusCode = 0,
-                    RefreshToken = TokenUtility.GenerateRefreshToken(username, jwtKey, durationDays: 30),
-                    AccessToken = TokenUtility.GenerateAccessToken(username, jwtKey, durationMinutes: 15)
+                    RefreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30),
+                    AccessToken = TokenUtility.GenerateAccessToken(username, durationMinutes: 15)
                 };
 
                 // Add access token to in-memory container, replacing any existing token for this user.
@@ -135,7 +132,7 @@ namespace RPG_Login_API.Services
                 response = new LoginResponseModel()
                 {
                     LoginStatusCode = (!userAccount.IsEmailConfirmed) ? 1 : 2,      // 1 if unconfirmed, else 2 for password reset
-                    RefreshToken = TokenUtility.GenerateRefreshToken(username, jwtKey, durationDays: 30),
+                    RefreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30),
                 };
             }
             else
@@ -144,8 +141,8 @@ namespace RPG_Login_API.Services
                 response = new LoginResponseModel()
                 {
                     LoginStatusCode = 0,
-                    RefreshToken = TokenUtility.GenerateRefreshToken(username, jwtKey, durationDays: 30),
-                    AccessToken = TokenUtility.GenerateAccessToken(username, jwtKey, durationMinutes: 15)
+                    RefreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30),
+                    AccessToken = TokenUtility.GenerateAccessToken(username, durationMinutes: 15)
                 };
 
                 // Add access token to in-memory container, replacing any existing token for this user.
@@ -157,6 +154,35 @@ namespace RPG_Login_API.Services
             userAccount.RefreshToken = response.RefreshToken;
             await UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
+            return response;
+        }
+
+        public async Task<LoginResponseModel?> UserRegisterAsync(string username, string email, string password)
+        {
+            // ENSURE UNIQUE USERNAME/EMAIL | Query database for any accounts with matching username or email.
+            var userAccount = await GetOneByUsernameAsync(username);
+            if (userAccount != null) return null;
+            userAccount = await GetOneByEmailAsync(username);
+            if (userAccount != null) return null;
+
+            // CREATE NEW ACCOUNT MODEL | Username and email are unique, so create a new user document.
+            string refreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30);
+            UserAccountModel userAccountModel = new()
+            {
+                Username = username,
+                Email = email,
+                PasswordHash = PasswordUtility.GenerateNewPasswordHash(password),
+                RefreshToken = refreshToken
+                // ObjectId is auto generated, and other values are left default.
+            };
+            await InsertOneAsync(userAccountModel);
+
+            // GENERATE RESPONSE | Finally, after account creation, generate response and return.
+            var response = new LoginResponseModel()
+            {
+                LoginStatusCode = 1,        // New accounts must always confirm email (code 1).
+                RefreshToken = refreshToken
+            };
             return response;
         }
 

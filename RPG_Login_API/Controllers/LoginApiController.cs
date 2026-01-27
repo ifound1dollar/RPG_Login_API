@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using RPG_Login_API.Models.UserRequests;
 using RPG_Login_API.Services;
 using RPG_Login_API.Utility;
+using System.Text.RegularExpressions;
 
 namespace RPG_Login_API.Controllers
 {
@@ -17,8 +18,6 @@ namespace RPG_Login_API.Controllers
     public class LoginApiController : Controller
     {
         // TODO: CONSIDER USING GLOBAL EXCEPTION HANDLING INTEAD OF TRY-CATCH BLOCKS IN EACH CONTROLLER METHOD
-
-        // TODO: BREAK USER CONTROLLER AND ADMIN CONTROLLERS INTO SEPARATE CLASSES
 
         private readonly LoginApiService service;
 
@@ -96,6 +95,44 @@ namespace RPG_Login_API.Controllers
             }
             
             // Consider adding a finally{} block that destroys the LoginRequestModel, removing raw password from memory.
+        }
+
+        [AllowAnonymous]
+        [Route("users/register")]
+        [HttpPost]
+        public async Task<ActionResult> UserRegisterAsync([FromBody] RegisterRequestModel registerRequest)
+        {
+            // Verify validity of email, username, and password with simple(?) regex.
+            string emailPattern = @"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$";          // Email
+            string usernamePattern = @"^[a-zA-Z0-9_]{5,20}$";                                   // Username, 5-20 chars, upper lower digit underscore
+            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$";   // Password, 8+ chars, 1+ upper lower digit symbol
+            if (!Regex.IsMatch(registerRequest.Email, emailPattern) || !Regex.IsMatch(registerRequest.Username, usernamePattern)
+                || !Regex.IsMatch(registerRequest.Password, passwordPattern))
+            {
+                LogUtility.LogError("Register",
+                    $"client registration failed (username {registerRequest.Username}), email/username/password did not match regex");
+                return BadRequest("Registration failed: invalid input for email, username, or password");
+            }
+
+            // TODO: ADD CHECK TO PREVENT GENERIC PASSWORDS (USE LIBRARY FOR THIS)
+
+            try
+            {
+                var responseModel = await service.UserRegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
+                if (responseModel == null)
+                {
+                    LogUtility.LogError("Register", $"client registration failed (username {registerRequest.Username}), non-unique username or email");
+                    return Conflict("Registration failed: username or email already in use");
+                }
+
+                LogUtility.LogMessage("Register", $"client successfully registered (username {registerRequest.Username})");
+                return Ok(responseModel);
+            }
+            catch (Exception ex)
+            {
+                LogUtility.LogError("Register", ex.Message);
+                return Problem();
+            }
         }
 
         #endregion

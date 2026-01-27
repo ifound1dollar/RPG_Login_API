@@ -7,17 +7,43 @@ POST {{RPG_Login_API_HostAddress}}/api/users/login
 Content-Type: application/json
 Accept: application/json
 {
-  "username": "testusername",
-  "password": ""
+  "Username": "testusername",
+  "Password": ""
+}
+
+###
+
+# @name login
+POST {{RPG_Login_API_HostAddress}}/api/users/login/refresh
+Content-Type: application/json
+Accept: application/json
+{
+  "RefreshToken": "notarealtoken"
+}
+
+###
+
+# @name login
+POST {{RPG_Login_API_HostAddress}}/api/users/register
+Content-Type: application/json
+
+{
+  "Username": "testusername",
+  "Email": "testemail@gmail.com"
+  "Password": "Testpassword1!"
 }
 
 ###
 
 
 
-### User requests
+### User requests (pass access token as bearer)
 
-GET {{DatabaseService_HostAddress}}/api/users/characters
-Authorization: Bearer {{login.response.body.$.token}}
+GET {{RPG_Login_API_HostAddress}}/api/users/characters
+Authorization: Bearer {{login.response.body.$.AccessToken}}
 Accept: application/json
 ###
+
+
+
+

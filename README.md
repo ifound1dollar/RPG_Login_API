@@ -12,3 +12,4 @@ DESCRIBE (much of this can be pulled from NetworkServices description):
 - endpoints like login, register, confirm, etc.
 - refresh and access token logic, with refresh tokens stored only in hashed form in the database
 - security considerations server-side, like token invalidation, failed login attempt counters, and password reset tokens
+- custom logging utility with configurable logger method (default Console.WriteLine() method)

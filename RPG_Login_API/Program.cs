@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using RPG_Login_API.Database;
 using RPG_Login_API.Services;
+using RPG_Login_API.Utility;
 using System.Security.Claims;
 using System.Text;
 
@@ -30,34 +31,7 @@ namespace RPG_Login_API
                 options => options.JsonSerializerOptions.PropertyNamingPolicy = null);
 
             // Add JWT token authentication configuration, retrieving the token key from secrets.json.
-            var jwtKey = builder.Configuration.GetSection("JwtKey").ToString();
-            if (jwtKey == null)
-            {
-                // TODO: USE CUSTOM LOGGER UTILITY INSTEAD OF RAW CONSOLE.WRITELINE()
-                Console.WriteLine("Failed to retrieve authentication JWT token key. Exiting.");
-                return;
-            }
-            byte[] jwtKeyBytes = Encoding.UTF8.GetBytes(jwtKey);
-            builder.Services.AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-            }).AddJwtBearer(options =>
-            {
-                options.RequireHttpsMetadata = false;
-                options.SaveToken = true;
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateIssuer = false,
-                    ValidateAudience = false,
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(jwtKeyBytes),
-                    RoleClaimType = ClaimTypes.Role     // Configure the [Authorize] behavior in Controllers to use Roles.
-                };
-            });
-            LoginApiService.SetJwtKey(jwtKeyBytes);     // Also set in-memory JWT key in Service (required for token generation).
-
-
+            ConfigureJwtValidation(builder);
 
 
 
@@ -93,6 +67,43 @@ namespace RPG_Login_API
             app.MapControllers();
 
             app.Run();
+        }
+
+        private static void ConfigureJwtValidation(WebApplicationBuilder builder)
+        {
+            // Read JWT key from secrets/environment.
+            var jwtKey = builder.Configuration.GetSection("JwtKey").ToString();
+            if (jwtKey == null)
+            {
+                LogUtility.LogError("Startup", "Failed to retrieve authentication JWT token key. Exiting.");
+                return;
+            }
+
+            // Use JWT key to create token validation parameters.
+            byte[] jwtKeyBytes = Encoding.UTF8.GetBytes(jwtKey);
+            TokenValidationParameters parameters = new()
+            {
+                ValidateIssuer = false,
+                ValidateAudience = false,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(jwtKeyBytes),
+                RoleClaimType = ClaimTypes.Role     // Configure the [Authorize] behavior in Controllers to use Roles.
+            };
+
+            // Add authentication configuration to builder's services, which will handle automatic bearer token validation.
+            builder.Services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            }).AddJwtBearer(options =>
+            {
+                options.RequireHttpsMetadata = false;
+                options.SaveToken = true;
+                options.TokenValidationParameters = parameters;
+            });
+            
+            // Finally, set required JWT token data in TokenUtility static class.
+            TokenUtility.SetRequiredData(jwtKeyBytes, parameters);
         }
     }
 }
