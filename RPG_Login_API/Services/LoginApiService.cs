@@ -68,13 +68,25 @@ namespace RPG_Login_API.Services
 
             // FIND USER | Try to find user in database. Return null if we cannot find by username.
             var userAccount = await GetOneByUsernameAsync(username);
-            if (userAccount == null) return null;
+            if (userAccount == null)
+            {
+                LogUtility.LogError("LoginFromRefresh", $"Token user not found in database (username: {username})");
+                return null;
+            }
 
             // COMPARE TOKEN | Now that we have found a valid user, compare the stored refresh token with this refresh token.
-            if (!TokenUtility.CompareTokens(refreshTokenString, userAccount.RefreshToken)) return null;
+            if (!TokenUtility.CompareTokens(refreshTokenString, userAccount.RefreshToken))
+            {
+                LogUtility.LogError("LoginFromRefresh", $"Passed-in token does not match token in database (username: {username})");
+                return null;
+            }
 
-            // ACTUALLY VALIDATE TOKEN | If refresh token is valid, compare expiration.
-            if (!TokenUtility.ValidateToken(refreshTokenString)) return null;
+            // ACTUALLY VALIDATE TOKEN | If token matches stored token in database, validate it (primarily checks expiration).
+            if (!TokenUtility.ValidateToken(refreshTokenString))
+            {
+                LogUtility.LogError("LoginFromRefresh", $"Refresh token failed validation, may be expired (username: {username})");
+                return null;
+            }
 
             // GENERATE RESPONSE | Finally, token is confirmed fully valid so determine login response based on account state.
             if (!userAccount.IsEmailConfirmed || userAccount.DoesPasswordNeedReset)
@@ -88,15 +100,13 @@ namespace RPG_Login_API.Services
             }
             else
             {
-                // Else account state is good, so return full login with refresh token AND access token.
+                // Else account state is good, so return full login with refresh token AND access token. Also update access tokens map.
                 response = new LoginResponseModel()
                 {
                     LoginStatusCode = 0,
                     RefreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30),
                     AccessToken = TokenUtility.GenerateAccessToken(username, durationMinutes: 15)
                 };
-
-                // Add access token to in-memory container, replacing any existing token for this user.
                 _accessTokens[username] = new AccessTokenData(username, response.AccessToken, durationMinutes: 15);
             }
 
@@ -105,6 +115,7 @@ namespace RPG_Login_API.Services
             userAccount.RefreshToken = response.RefreshToken;
             await UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
+            LogUtility.LogMessage("LoginFromRefresh", $"User refresh login successful (username: {username}) with login code {response.LoginStatusCode}");
             return response;
         }
 
@@ -119,11 +130,19 @@ namespace RPG_Login_API.Services
             if (userAccount == null)
             {
                 userAccount = await GetOneByEmailAsync(username);
-                if (userAccount == null) return null;
+                if (userAccount == null)
+                {
+                    LogUtility.LogError("Login", $"Username/email not found in database (input: {username})");
+                    return null;
+                }
             }
 
             // COMPARE PASSWORD | If user found, compare password using PasswordUtility class. Return null if password mismatch.
-            if (!PasswordUtility.ComparePasswordToHash(password, userAccount.PasswordHash)) return null;
+            if (!PasswordUtility.ComparePasswordToHash(password, userAccount.PasswordHash))
+            {
+                LogUtility.LogError("Login", $"User-submitted password does not match account's stored password (username: {username})");
+                return null;
+            }
 
             // GENERATE RESPONSE | Determine how we will process login based on account state.
             if (!userAccount.IsEmailConfirmed || userAccount.DoesPasswordNeedReset)
@@ -137,15 +156,13 @@ namespace RPG_Login_API.Services
             }
             else
             {
-                // Else account state is good, so return full login with refresh token AND access token.
+                // Else account state is good, so return full login with refresh token AND access token. Also update access tokens map.
                 response = new LoginResponseModel()
                 {
                     LoginStatusCode = 0,
                     RefreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30),
                     AccessToken = TokenUtility.GenerateAccessToken(username, durationMinutes: 15)
                 };
-
-                // Add access token to in-memory container, replacing any existing token for this user.
                 _accessTokens[username] = new AccessTokenData(username, response.AccessToken, durationMinutes: 15);
             }
 
@@ -154,6 +171,7 @@ namespace RPG_Login_API.Services
             userAccount.RefreshToken = response.RefreshToken;
             await UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
+            LogUtility.LogMessage("Login", $"User login successful (username: {username}) with login code {response.LoginStatusCode}");
             return response;
         }
 
@@ -161,9 +179,17 @@ namespace RPG_Login_API.Services
         {
             // ENSURE UNIQUE USERNAME/EMAIL | Query database for any accounts with matching username or email.
             var userAccount = await GetOneByUsernameAsync(username);
-            if (userAccount != null) return null;
+            if (userAccount != null)
+            {
+                LogUtility.LogError("Register", $"User-submitted username already in use (username: {username})");
+                return null;
+            }
             userAccount = await GetOneByEmailAsync(username);
-            if (userAccount != null) return null;
+            if (userAccount != null)
+            {
+                LogUtility.LogError("Register", $"User-submitted email already in use (email: {email})");
+                return null;
+            }
 
             // CREATE NEW ACCOUNT MODEL | Username and email are unique, so create a new user document.
             string refreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30);
@@ -183,7 +209,41 @@ namespace RPG_Login_API.Services
                 LoginStatusCode = 1,        // New accounts must always confirm email (code 1).
                 RefreshToken = refreshToken
             };
+
+            LogUtility.LogMessage("Register", $"New user registration successful (username: {username}, email: {email})");
             return response;
+        }
+
+        public async Task UserLogoutAsync(string refreshTokenString)
+        {
+            // PARSE TOKEN | Try to retrieve username and token object from the passed-in token string.
+            if (!TokenUtility.TryReadUsernameFromTokenString(refreshTokenString, out var username)) return;
+
+            // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
+            var userAccount = await GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                LogUtility.LogError("Logout", $"Token user not found in database (username: {username})");
+                return;
+            }
+
+            // COMPARE TOKEN | Only allow logout from the currently-logged-in user (matching refresh token).
+            if (!TokenUtility.CompareTokens(refreshTokenString, userAccount.RefreshToken))
+            {
+                LogUtility.LogError("Logout", $"User-submitted token does not match token in database, denying logout (username: {username}");
+                return;
+            }
+
+            // NOTE: We do not need to check token expiration, as we are logging out anyway.
+
+            // REMOVE ACCESS TOKEN | Try to find an access token for this user, removing if found.
+            _accessTokens.Remove(username);
+
+            // UPDATE DATABASE | Remove the stored refresh token from the user account document, then update database.
+            userAccount.RefreshToken = string.Empty;
+            await UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            LogUtility.LogMessage("Logout", $"User successfully logged out (username: {username})");
         }
 
         #endregion

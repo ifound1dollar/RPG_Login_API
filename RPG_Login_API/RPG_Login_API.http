@@ -26,11 +26,20 @@ Accept: application/json
 # @name login
 POST {{RPG_Login_API_HostAddress}}/api/users/register
 Content-Type: application/json
-
+Accept: application/json
 {
   "Username": "testusername",
   "Email": "testemail@gmail.com"
   "Password": "Testpassword1!"
+}
+
+###
+
+POST {{RPG_Login_API_HostAddress}}/api/users/logout
+Content-Type: application/json
+Accept: application/json
+{
+  //RefreshOnlyRequestModel
 }
 
 ###
@@ -43,6 +52,8 @@ GET {{RPG_Login_API_HostAddress}}/api/users/characters
 Authorization: Bearer {{login.response.body.$.AccessToken}}
 Accept: application/json
 ###
+
+
 
 
 

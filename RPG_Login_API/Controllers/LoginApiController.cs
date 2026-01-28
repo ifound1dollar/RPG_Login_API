@@ -36,12 +36,12 @@ namespace RPG_Login_API.Controllers
         [AllowAnonymous]                // Logging in requires allowing un-authorized users to access endpoint.
         [Route("users/login/refresh")]
         [HttpPost]
-        public async Task<ActionResult> UserLoginFromRefreshAsync([FromBody] LoginFromRefreshRequestModel request)
+        public async Task<ActionResult> UserLoginFromRefreshAsync([FromBody] RefreshOnlyRequestModel request)
         {
             // Validate request body immediately.
             if (request.RefreshToken == string.Empty)
             {
-                LogUtility.LogError("LoginFromRefresh", "client login from refresh failed, missing refresh token in request body");
+                LogUtility.LogError("LoginFromRefresh", "Client refresh login failed, missing refresh token in request body");
                 return BadRequest("Failed to login with refresh token: refresh token field cannot be empty.");
             }
 
@@ -50,11 +50,9 @@ namespace RPG_Login_API.Controllers
                 var responseModel = await service.UserLoginFromRefreshAsync(request.RefreshToken);
                 if (responseModel == null)
                 {
-                    LogUtility.LogError("Login", $"client login from refresh failed, invalid or expired token");
-                    return Unauthorized("Login failed: invalid or expired refresh token.");
+                    return Unauthorized("Failed to login with refresh token: invalid or expired refresh token.");
                 }
 
-                LogUtility.LogMessage("Login", $"client successfully logged in");
                 return Ok(responseModel);
             }
             catch (Exception ex)
@@ -72,7 +70,7 @@ namespace RPG_Login_API.Controllers
             // Immediately reject any request with empty input fields.
             if (loginRequest.Username == string.Empty || loginRequest.Password == string.Empty)
             {
-                LogUtility.LogError("Login", "invalid client login request, missing username or password fields in request body");
+                LogUtility.LogError("Login", "Client login failed, missing username or password fields in request body");
                 return BadRequest("Login failed: username and password fields must not be empty.");
             }
 
@@ -81,11 +79,9 @@ namespace RPG_Login_API.Controllers
                 var responseModel = await service.UserLoginAsync(loginRequest.Username, loginRequest.Password);
                 if (responseModel == null)
                 {
-                    LogUtility.LogError("Login", $"client login failed (username {loginRequest.Username}), invalid username or password");
-                    return Unauthorized("Login failed: Invalid username or password.");
+                    return Unauthorized("Login failed: invalid username or password.");
                 }
 
-                LogUtility.LogMessage("Login", $"client successfully logged in (username {loginRequest.Username})");
                 return Ok(responseModel);
             }
             catch (Exception ex)
@@ -110,27 +106,51 @@ namespace RPG_Login_API.Controllers
                 || !Regex.IsMatch(registerRequest.Password, passwordPattern))
             {
                 LogUtility.LogError("Register",
-                    $"client registration failed (username {registerRequest.Username}), email/username/password did not match regex");
+                    $"Client registration failed (username {registerRequest.Username}), email/username/password failed regex check");
                 return BadRequest("Registration failed: invalid input for email, username, or password");
             }
 
-            // TODO: ADD CHECK TO PREVENT GENERIC PASSWORDS (USE LIBRARY FOR THIS)
+            // TODO: ADD CHECK TO PREVENT GENERIC PASSWORDS (USE LIBRARY FOR THIS). RETURN 422 'UNPROCESSABLE ENTITY' IF GENERIC.
+            // https://github.com/andrewlock/CommonPasswordsValidator
 
             try
             {
                 var responseModel = await service.UserRegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
                 if (responseModel == null)
                 {
-                    LogUtility.LogError("Register", $"client registration failed (username {registerRequest.Username}), non-unique username or email");
-                    return Conflict("Registration failed: username or email already in use");
+                    return Conflict("Registration failed: unavailable username or email");
                 }
 
-                LogUtility.LogMessage("Register", $"client successfully registered (username {registerRequest.Username})");
                 return Ok(responseModel);
             }
             catch (Exception ex)
             {
                 LogUtility.LogError("Register", ex.Message);
+                return Problem();
+            }
+        }
+
+        [AllowAnonymous]
+        [Route("users/logout")]
+        [HttpPost]
+        public async Task<ActionResult> UserLogoutAsync([FromBody] RefreshOnlyRequestModel logoutRequest)
+        {
+            // Validate request body immediately.
+            if (logoutRequest.RefreshToken == string.Empty)
+            {
+                LogUtility.LogError("Logout", "Client logout failed, missing refresh token in request body");
+                return BadRequest("Failed to logout with refresh token: refresh token field cannot be empty.");
+            }
+
+            try
+            {
+                await service.UserLogoutAsync(logoutRequest.RefreshToken);
+
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                LogUtility.LogError("Logout", ex.Message);
                 return Problem();
             }
         }
