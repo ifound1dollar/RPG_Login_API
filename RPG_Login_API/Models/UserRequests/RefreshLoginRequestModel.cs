@@ -1,6 +1,6 @@
 ﻿namespace RPG_Login_API.Models.UserRequests
 {
-    public class RefreshOnlyRequestModel
+    public class RefreshLoginRequestModel
     {
         public string RefreshToken { get; set; } = string.Empty;
     }

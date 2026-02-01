@@ -1,8 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
-using RPG_Login_API.Data;
-using RPG_Login_API.Database;
+using RPG_Login_API.Configuration;
 using RPG_Login_API.Models.MongoDB;
 using RPG_Login_API.Models.UserResponses;
 using RPG_Login_API.Utility;
@@ -15,14 +14,18 @@ namespace RPG_Login_API.Services
     public class LoginApiService
     {
         // Private in-memory containers for volatile data (ex. access tokens, login attempt tracking).
-        private readonly Dictionary<string, AccessTokenData> _accessTokens = [];    // Maps username:tokenData
+        private readonly Dictionary<string, DateTime> _tokenGuidBlacklist = [];     // Stores invalidated access tokens with expiration
 
 
 
         private readonly IMongoCollection<UserAccountModel> userAccountsCollection;
+        private readonly ILogger _logger;
+        private readonly TokenService _tokenService;
 
-        public LoginApiService(IOptions<DatabaseSettings> settings)
+        public LoginApiService(IOptions<DatabaseSettings> settings, ILogger<LoginApiService> logger, TokenService tokenService)
         {
+            // TODO: MAKE DATABASE SERVICE ITS OWN CLASS, AND PASS INTO CONSTRUCTOR HERE VIA DEPENDENCY INJECTION
+
             // Create a new MongoClient instance from the connecting string defined in secrets.json.
             // Data pulled from secrets.json is stored in a DatabaseSettings singleton on app build in Program.cs.
             MongoClient client = new(settings.Value.ConnectionString);
@@ -32,6 +35,9 @@ namespace RPG_Login_API.Services
 
             // Finally, instantiate the collection using the name defined in secrets.json.
             userAccountsCollection = database.GetCollection<UserAccountModel>(settings.Value.UserAccountsCollectionName);
+
+            _logger = logger;
+            _tokenService = tokenService;
         }
 
         /// <summary>
@@ -48,7 +54,7 @@ namespace RPG_Login_API.Services
             }
             catch (Exception ex)
             {
-                LogUtility.LogError("Startup", ex.Message);
+                _logger.LogError(ex.Message);
                 return false;
             }
         }
@@ -64,27 +70,27 @@ namespace RPG_Login_API.Services
             LoginResponseModel response;
 
             // PARSE TOKEN | Try to retrieve username and token object from the passed-in token string.
-            if (!TokenUtility.TryReadUsernameFromTokenString(refreshTokenString, out var username)) return null;
+            if (!_tokenService.TryReadUsernameFromTokenString(refreshTokenString, out var username)) return null;
 
             // FIND USER | Try to find user in database. Return null if we cannot find by username.
             var userAccount = await GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
-                LogUtility.LogError("LoginFromRefresh", $"Token user not found in database (username: {username})");
+                _logger.LogInformation("Token user not found in database (username: {username})", username);
                 return null;
             }
 
             // COMPARE TOKEN | Now that we have found a valid user, compare the stored refresh token with this refresh token.
-            if (!TokenUtility.CompareTokens(refreshTokenString, userAccount.RefreshToken))
+            if (!_tokenService.CompareTokens(refreshTokenString, userAccount.RefreshToken))
             {
-                LogUtility.LogError("LoginFromRefresh", $"Passed-in token does not match token in database (username: {username})");
+                _logger.LogInformation("Passed-in token does not match token in database (username: {username})", username);
                 return null;
             }
 
             // ACTUALLY VALIDATE TOKEN | If token matches stored token in database, validate it (primarily checks expiration).
-            if (!TokenUtility.ValidateToken(refreshTokenString))
+            if (!_tokenService.ValidateToken(refreshTokenString))
             {
-                LogUtility.LogError("LoginFromRefresh", $"Refresh token failed validation, may be expired (username: {username})");
+                _logger.LogInformation("Refresh token failed validation, may be expired (username: {username})", username);
                 return null;
             }
 
@@ -92,10 +98,12 @@ namespace RPG_Login_API.Services
             if (!userAccount.IsEmailConfirmed || userAccount.DoesPasswordNeedReset)
             {
                 // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
+                int statusCode = (!userAccount.IsEmailConfirmed) ? 1 : 2;   // 1 if unconfirmed, else 2 for password reset
                 response = new LoginResponseModel()
                 {
-                    LoginStatusCode = (!userAccount.IsEmailConfirmed) ? 1 : 2,      // 1 if unconfirmed, else 2 for password reset
-                    RefreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30),
+                    LoginStatusCode = statusCode,      
+                    RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
+                    AccessToken = _tokenService.GenerateAccessToken(username, statusCode, durationMinutes: 15)
                 };
             }
             else
@@ -104,10 +112,9 @@ namespace RPG_Login_API.Services
                 response = new LoginResponseModel()
                 {
                     LoginStatusCode = 0,
-                    RefreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30),
-                    AccessToken = TokenUtility.GenerateAccessToken(username, durationMinutes: 15)
+                    RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
+                    AccessToken = _tokenService.GenerateAccessToken(username, 0, durationMinutes: 15)
                 };
-                _accessTokens[username] = new AccessTokenData(username, response.AccessToken, durationMinutes: 15);
             }
 
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
@@ -115,7 +122,8 @@ namespace RPG_Login_API.Services
             userAccount.RefreshToken = response.RefreshToken;
             await UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-            LogUtility.LogMessage("LoginFromRefresh", $"User refresh login successful (username: {username}) with login code {response.LoginStatusCode}");
+            _logger.LogInformation("User refresh login successful (username: {username}) with login code {responseCode}",
+                username, response.LoginStatusCode);
             return response;
         }
 
@@ -132,7 +140,7 @@ namespace RPG_Login_API.Services
                 userAccount = await GetOneByEmailAsync(username);
                 if (userAccount == null)
                 {
-                    LogUtility.LogError("Login", $"Username/email not found in database (input: {username})");
+                    _logger.LogInformation("Username/email not found in database (input: {username})", username);
                     return null;
                 }
             }
@@ -140,7 +148,7 @@ namespace RPG_Login_API.Services
             // COMPARE PASSWORD | If user found, compare password using PasswordUtility class. Return null if password mismatch.
             if (!PasswordUtility.ComparePasswordToHash(password, userAccount.PasswordHash))
             {
-                LogUtility.LogError("Login", $"User-submitted password does not match account's stored password (username: {username})");
+                _logger.LogInformation("User-submitted password does not match account's stored password (username: {username})", username);
                 return null;
             }
 
@@ -148,10 +156,12 @@ namespace RPG_Login_API.Services
             if (!userAccount.IsEmailConfirmed || userAccount.DoesPasswordNeedReset)
             {
                 // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
+                int statusCode = (!userAccount.IsEmailConfirmed) ? 1 : 2;   // 1 if unconfirmed, else 2 for password reset
                 response = new LoginResponseModel()
                 {
-                    LoginStatusCode = (!userAccount.IsEmailConfirmed) ? 1 : 2,      // 1 if unconfirmed, else 2 for password reset
-                    RefreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30),
+                    LoginStatusCode = statusCode,
+                    RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
+                    AccessToken = _tokenService.GenerateAccessToken(username, statusCode, durationMinutes: 15)
                 };
             }
             else
@@ -160,10 +170,9 @@ namespace RPG_Login_API.Services
                 response = new LoginResponseModel()
                 {
                     LoginStatusCode = 0,
-                    RefreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30),
-                    AccessToken = TokenUtility.GenerateAccessToken(username, durationMinutes: 15)
+                    RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
+                    AccessToken = _tokenService.GenerateAccessToken(username, 0, durationMinutes: 15)
                 };
-                _accessTokens[username] = new AccessTokenData(username, response.AccessToken, durationMinutes: 15);
             }
 
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
@@ -171,7 +180,8 @@ namespace RPG_Login_API.Services
             userAccount.RefreshToken = response.RefreshToken;
             await UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-            LogUtility.LogMessage("Login", $"User login successful (username: {username}) with login code {response.LoginStatusCode}");
+            _logger.LogInformation("User login successful (username: {username}) with login code {responseCode}",
+                username, response.LoginStatusCode);
             return response;
         }
 
@@ -181,18 +191,18 @@ namespace RPG_Login_API.Services
             var userAccount = await GetOneByUsernameAsync(username);
             if (userAccount != null)
             {
-                LogUtility.LogError("Register", $"User-submitted username already in use (username: {username})");
+                _logger.LogInformation("User-submitted username already in use (username: {username})", username);
                 return null;
             }
             userAccount = await GetOneByEmailAsync(username);
             if (userAccount != null)
             {
-                LogUtility.LogError("Register", $"User-submitted email already in use (email: {email})");
+                _logger.LogInformation("User-submitted email already in use (email: {email})", email);
                 return null;
             }
 
             // CREATE NEW ACCOUNT MODEL | Username and email are unique, so create a new user document.
-            string refreshToken = TokenUtility.GenerateRefreshToken(username, durationDays: 30);
+            string refreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30);
             UserAccountModel userAccountModel = new()
             {
                 Username = username,
@@ -210,40 +220,30 @@ namespace RPG_Login_API.Services
                 RefreshToken = refreshToken
             };
 
-            LogUtility.LogMessage("Register", $"New user registration successful (username: {username}, email: {email})");
+            _logger.LogInformation("New user registration successful (username: {username}, email: {email})", username, email);
             return response;
         }
 
-        public async Task UserLogoutAsync(string refreshTokenString)
+        public async Task UserLogoutAsync(string username, string tokenGuid)
         {
-            // PARSE TOKEN | Try to retrieve username and token object from the passed-in token string.
-            if (!TokenUtility.TryReadUsernameFromTokenString(refreshTokenString, out var username)) return;
+            // Access token validation is performed in controller. We know the caller is the valid user for this account.
 
             // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
             var userAccount = await GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
-                LogUtility.LogError("Logout", $"Token user not found in database (username: {username})");
+                _logger.LogInformation("Token user not found in database (username: {username})", username);
                 return;
             }
 
-            // COMPARE TOKEN | Only allow logout from the currently-logged-in user (matching refresh token).
-            if (!TokenUtility.CompareTokens(refreshTokenString, userAccount.RefreshToken))
-            {
-                LogUtility.LogError("Logout", $"User-submitted token does not match token in database, denying logout (username: {username}");
-                return;
-            }
-
-            // NOTE: We do not need to check token expiration, as we are logging out anyway.
-
-            // REMOVE ACCESS TOKEN | Try to find an access token for this user, removing if found.
-            _accessTokens.Remove(username);
+            // BLACKLIST OLD ACCESS TOKEN | Add old token's GUID to blacklist, which expires at token default duration (max).
+            _tokenGuidBlacklist.Add(tokenGuid, DateTime.UtcNow.AddMinutes(15));
 
             // UPDATE DATABASE | Remove the stored refresh token from the user account document, then update database.
             userAccount.RefreshToken = string.Empty;
             await UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-            LogUtility.LogMessage("Logout", $"User successfully logged out (username: {username})");
+            _logger.LogInformation("User successfully logged out (username: {username})", username);
         }
 
         #endregion

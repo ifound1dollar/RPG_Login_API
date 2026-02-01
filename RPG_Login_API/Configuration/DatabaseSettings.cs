@@ -1,4 +1,4 @@
-﻿namespace RPG_Login_API.Database
+﻿namespace RPG_Login_API.Configuration
 {
     public class DatabaseSettings
     {

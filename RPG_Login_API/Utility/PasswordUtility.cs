@@ -67,5 +67,7 @@ namespace RPG_Login_API.Utility
             }
             return true;        // Will only reach here if there is no mismatch found.
         }
+
+        // TODO: ADD REFRESH TOKEN HASHING AND COMPARISON, POTENTIALLY RENAMING STATIC CLASS
     }
 }

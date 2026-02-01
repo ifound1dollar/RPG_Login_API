@@ -1,7 +1,7 @@
 
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using RPG_Login_API.Database;
+using RPG_Login_API.Configuration;
 using RPG_Login_API.Services;
 using RPG_Login_API.Utility;
 using System.Security.Claims;
@@ -17,21 +17,27 @@ namespace RPG_Login_API
 
 
 
-
-
             // Database settings. These are stored in secrets.json, accessible by [right click project] -> Manage User Secrets.
             builder.Services.Configure<DatabaseSettings>(builder.Configuration.GetSection("DatabaseSettings"));
 
-            // Add our desired service(s). Registers them to enable constructor injection (ctor receives DatabaseSettings).
+            // Security token (JWT) settings, also stored in secrets.json.
+            var tokenSettings = builder.Configuration.GetSection("TokenSettings");
+            builder.Services.Configure<TokenSettings>(tokenSettings);
+
+            // Configure and add JWT token authentication, passing token settings from config section above.
+            ConfigureJwtValidation(builder, tokenSettings);
+
+            // Configure our logger. Currently only uses the console, but can be easily extended.
+            builder.Logging.ClearProviders().AddConsole();
+
+            // Add our desired service(s). Registers them to enable constructor injection.
+            builder.Services.AddSingleton<TokenService>();      // Must add token service first (other services depend on it).
             builder.Services.AddSingleton<LoginApiService>();
 
             // Add our controller(s). Adds an additional JSON option to remove the special naming policy from serialization
             //  behavior, which will retain PascalCase (as used by C#) rather than re-formatting to camelCase (the default).
             builder.Services.AddControllers().AddJsonOptions(
                 options => options.JsonSerializerOptions.PropertyNamingPolicy = null);
-
-            // Add JWT token authentication configuration, retrieving the token key from secrets.json.
-            ConfigureJwtValidation(builder);
 
 
 
@@ -63,20 +69,23 @@ namespace RPG_Login_API
 
             app.UseAuthorization();
 
-
             app.MapControllers();
 
             app.Run();
         }
 
-        private static void ConfigureJwtValidation(WebApplicationBuilder builder)
+        private static void ConfigureJwtValidation(WebApplicationBuilder builder, IConfigurationSection section)
         {
-            // Read JWT key from secrets/environment.
-            var jwtKey = builder.Configuration.GetSection("JwtKey").ToString();
+            // Bind configuration section to new TokenSettings object (normally auto-handled with Services.Configure<>()).
+            var tokenSettings = new TokenSettings();
+            section.Bind(tokenSettings);
+
+            // Read JWT key from TokenSettings and ensure validity.
+            var jwtKey = tokenSettings.JwtKey;
             if (jwtKey == null)
             {
-                LogUtility.LogError("Startup", "Failed to retrieve authentication JWT token key. Exiting.");
-                return;
+                Console.WriteLine("[ERROR] Startup: Failed to retrieve authentication JWT token key. Exiting.");
+                Environment.Exit(1);
             }
 
             // Use JWT key to create token validation parameters.
@@ -90,6 +99,7 @@ namespace RPG_Login_API
                 RoleClaimType = ClaimTypes.Role     // Configure the [Authorize] behavior in Controllers to use Roles.
             };
 
+
             // Add authentication configuration to builder's services, which will handle automatic bearer token validation.
             builder.Services.AddAuthentication(options =>
             {
@@ -101,9 +111,6 @@ namespace RPG_Login_API
                 options.SaveToken = true;
                 options.TokenValidationParameters = parameters;
             });
-            
-            // Finally, set required JWT token data in TokenUtility static class.
-            TokenUtility.SetRequiredData(jwtKeyBytes, parameters);
         }
     }
 }

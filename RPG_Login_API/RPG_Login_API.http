@@ -8,7 +8,7 @@ Content-Type: application/json
 Accept: application/json
 {
   "Username": "testusername",
-  "Password": ""
+  "Password": "Testpassword1!"
 }
 
 ###
@@ -36,12 +36,9 @@ Accept: application/json
 ###
 
 POST {{RPG_Login_API_HostAddress}}/api/users/logout
+Authorization: Bearer {{login.response.body.$.AccessToken}}
 Content-Type: application/json
 Accept: application/json
-{
-  //RefreshOnlyRequestModel
-}
-
 ###
 
 
