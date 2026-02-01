@@ -1,4 +1,5 @@
 ﻿using System.Security.Cryptography;
+using System.Text;
 
 namespace RPG_Login_API.Utility
 {
@@ -6,7 +7,7 @@ namespace RPG_Login_API.Utility
     /// This is a static class with a handful of methods to perform hashing and comparison. Should be used for
     ///  password and token hashing.
     /// </summary>
-    public static class PasswordUtility
+    public static class HashUtility
     {
         private const int SALT_SIZE = 16;
         private const int HASH_SIZE = 20;
@@ -72,6 +73,39 @@ namespace RPG_Login_API.Utility
             return true;        // Will only reach here if there is no mismatch found.
         }
 
-        // TODO: ADD REFRESH TOKEN HASHING AND COMPARISON, POTENTIALLY RENAMING STATIC CLASS
+
+
+        /// <summary>
+        /// Generates a new un-salted hash for the passed-in refresh token. Do not use this method for passwords.
+        /// </summary>
+        /// <param name="refreshToken"> The raw refresh token to be hashed. </param>
+        /// <returns> The hashed, un-salted refresh token. </returns>
+        public static string GenerateNewRefreshTokenHash(string refreshToken)
+        {
+            // Convert input string to bytes.
+            byte[] bytes = Encoding.UTF8.GetBytes(refreshToken);
+
+            // Generate hash, not using salt or any other particularly complex hash.
+            var hash = SHA256.HashData(bytes);
+
+            // Return as base64 string (could return in any form).
+            return Convert.ToBase64String(hash);
+        }
+
+        /// <summary>
+        /// Compares a new (raw) refresh token against a stored (hashed) refresh token. Returns whether the
+        ///  tokens match.
+        /// </summary>
+        /// <param name="newRefreshToken"> The new (raw) refresh token to be compared against the stored token. </param>
+        /// <param name="hashedRefreshToken"> The stored (hashed) refresh token being compared against. </param>
+        /// <returns> Whether the tokens match. True if match, false otherwise. </returns>
+        public static bool CompareRefreshTokenToHash(string newRefreshToken, string hashedRefreshToken)
+        {
+            // Get hash of new refresh token, can use above method because we are not using salt.
+            string newHash = GenerateNewRefreshTokenHash(newRefreshToken);
+
+            // Return whether the strings match. Can use simply string.Equals() check.
+            return newHash.Equals(hashedRefreshToken);
+        }
     }
 }

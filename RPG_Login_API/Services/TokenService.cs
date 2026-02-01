@@ -112,11 +112,6 @@ namespace RPG_Login_API.Services
             return username != null;
         }
 
-        public bool CompareTokens(string token1, string token2)
-        {
-            return token1.Equals(token2);
-        }
-
         public bool ValidateToken(string token)
         {
             // https://stackoverflow.com/questions/50204844/how-to-validate-a-jwt-token

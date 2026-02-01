@@ -57,7 +57,7 @@ namespace RPG_Login_API.Services
             }
 
             // COMPARE TOKEN | Now that we have found a valid user, compare the stored refresh token with this refresh token.
-            if (!_tokenService.CompareTokens(refreshTokenString, userAccount.RefreshToken))
+            if (!HashUtility.CompareRefreshTokenToHash(refreshTokenString, userAccount.RefreshTokenHash))
             {
                 _logger.LogInformation("Passed-in token does not match token in database (username: {username})", username);
                 return null;
@@ -67,14 +67,18 @@ namespace RPG_Login_API.Services
             if (!_tokenService.ValidateToken(refreshTokenString))
             {
                 _logger.LogInformation("Refresh token failed validation, may be expired (username: {username})", username);
+
+                // This means the token in the database is invalid, so remove it.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
                 return null;
             }
 
             // GENERATE RESPONSE | Finally, token is confirmed fully valid so determine login response based on account state.
-            if (!userAccount.IsEmailConfirmed || userAccount.DoesPasswordNeedReset)
+            if (!userAccount.IsEmailVerified || userAccount.DoesPasswordNeedReset)
             {
                 // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
-                int statusCode = (!userAccount.IsEmailConfirmed) ? 1 : 2;   // 1 if unconfirmed, else 2 for password reset
+                int statusCode = (!userAccount.IsEmailVerified) ? 1 : 2;   // 1 if unconfirmed, else 2 for password reset
                 response = new LoginResponseModel()
                 {
                     LoginStatusCode = statusCode,      
@@ -93,9 +97,9 @@ namespace RPG_Login_API.Services
                 };
             }
 
-            // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
-            // TODO: STORE REFRESH TOKEN AS HASH INSTEAD OF RAW, FOR SECURITY REASONS
-            userAccount.RefreshToken = response.RefreshToken;
+            // UPDATE DATABASE | After token generation, update document in database with newly-generated HASHED refresh token.
+            string hashedToken = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
+            userAccount.RefreshTokenHash = hashedToken;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation("User refresh login successful (username: {username}) with login code {responseCode}",
@@ -122,17 +126,17 @@ namespace RPG_Login_API.Services
             }
 
             // COMPARE PASSWORD | If user found, compare password using PasswordUtility class. Return null if password mismatch.
-            if (!PasswordUtility.ComparePasswordToHash(password, userAccount.PasswordHash))
+            if (!HashUtility.ComparePasswordToHash(password, userAccount.PasswordHash))
             {
                 _logger.LogInformation("User-submitted password does not match account's stored password (username: {username})", username);
                 return null;
             }
 
             // GENERATE RESPONSE | Determine how we will process login based on account state.
-            if (!userAccount.IsEmailConfirmed || userAccount.DoesPasswordNeedReset)
+            if (!userAccount.IsEmailVerified || userAccount.DoesPasswordNeedReset)
             {
                 // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
-                int statusCode = (!userAccount.IsEmailConfirmed) ? 1 : 2;   // 1 if unconfirmed, else 2 for password reset
+                int statusCode = (!userAccount.IsEmailVerified) ? 1 : 2;   // 1 if unconfirmed, else 2 for password reset
                 response = new LoginResponseModel()
                 {
                     LoginStatusCode = statusCode,
@@ -152,8 +156,8 @@ namespace RPG_Login_API.Services
             }
 
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
-            // TODO: STORE REFRESH TOKEN AS HASH INSTEAD OF RAW, FOR SECURITY REASONS
-            userAccount.RefreshToken = response.RefreshToken;
+            string hashedToken = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
+            userAccount.RefreshTokenHash = hashedToken;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation("User login successful (username: {username}) with login code {responseCode}",
@@ -183,8 +187,8 @@ namespace RPG_Login_API.Services
             {
                 Username = username,
                 Email = email,
-                PasswordHash = PasswordUtility.GenerateNewPasswordHash(password),
-                RefreshToken = refreshToken
+                PasswordHash = HashUtility.GenerateNewPasswordHash(password),
+                RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(refreshToken)    // Store hashed token in database.
                 // ObjectId is auto generated, and other values are left default.
             };
             await _databaseService.InsertOneAsync(userAccountModel);
@@ -193,7 +197,8 @@ namespace RPG_Login_API.Services
             var response = new LoginResponseModel()
             {
                 LoginStatusCode = 1,        // New accounts must always confirm email (code 1).
-                RefreshToken = refreshToken
+                RefreshToken = refreshToken,
+                AccessToken = _tokenService.GenerateAccessToken(username, 1, durationMinutes: 15)
             };
 
             _logger.LogInformation("New user registration successful (username: {username}, email: {email})", username, email);
@@ -216,7 +221,7 @@ namespace RPG_Login_API.Services
             _tokenGuidBlacklist.Add(tokenGuid, DateTime.UtcNow.AddMinutes(15));
 
             // UPDATE DATABASE | Remove the stored refresh token from the user account document, then update database.
-            userAccount.RefreshToken = string.Empty;
+            userAccount.RefreshTokenHash = string.Empty;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation("User successfully logged out (username: {username})", username);

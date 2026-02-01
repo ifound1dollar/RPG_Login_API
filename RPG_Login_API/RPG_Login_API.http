@@ -14,11 +14,22 @@ Accept: application/json
 ###
 
 # @name login
+POST {{RPG_Login_API_HostAddress}}/api/users/login
+Content-Type: application/json
+Accept: application/json
+{
+  "Username": "seconduser",
+  "Password": "Secondpassword2@"
+}
+
+###
+
+# @name login
 POST {{RPG_Login_API_HostAddress}}/api/users/login/refresh
 Content-Type: application/json
 Accept: application/json
 {
-  "RefreshToken": "notarealtoken"
+  "RefreshToken": "{{login.response.body.$.RefreshToken}}"
 }
 
 ###
@@ -28,9 +39,9 @@ POST {{RPG_Login_API_HostAddress}}/api/users/register
 Content-Type: application/json
 Accept: application/json
 {
-  "Username": "testusername",
-  "Email": "testemail@gmail.com"
-  "Password": "Testpassword1!"
+  "Username": "seconduser",
+  "Email": "seconduser@gmail.com",
+  "Password": "Secondpassword2@"
 }
 
 ###
@@ -49,9 +60,4 @@ GET {{RPG_Login_API_HostAddress}}/api/users/characters
 Authorization: Bearer {{login.response.body.$.AccessToken}}
 Accept: application/json
 ###
-
-
-
-
-
 

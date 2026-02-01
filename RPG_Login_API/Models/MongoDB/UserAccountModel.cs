@@ -25,14 +25,14 @@ namespace RPG_Login_API.Models.MongoDB
         [BsonElement("password_hash")]
         public string PasswordHash { get; set; } = string.Empty;
 
-        [BsonElement("is_email_confirmed")]
-        public bool IsEmailConfirmed { get; set; } = false;
+        [BsonElement("is_email_verified")]
+        public bool IsEmailVerified { get; set; } = false;
 
         [BsonElement("does_password_need_reset")]
         public bool DoesPasswordNeedReset { get; set; } = false;
 
         [BsonElement("refresh_token")]
-        public string RefreshToken { get; set; } = string.Empty;
+        public string RefreshTokenHash { get; set; } = string.Empty;
 
 
 
