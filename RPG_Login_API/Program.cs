@@ -30,9 +30,10 @@ namespace RPG_Login_API
             // Configure our logger. Currently only uses the console, but can be easily extended.
             builder.Logging.ClearProviders().AddConsole();
 
-            // Add our desired service(s). Registers them to enable constructor injection.
-            builder.Services.AddSingleton<TokenService>();      // Must add token service first (other services depend on it).
-            builder.Services.AddSingleton<LoginApiService>();
+            // Add our desired services. Registers them to enable constructor injection.
+            builder.Services.AddSingleton<DatabaseService>();
+            builder.Services.AddSingleton<TokenService>();
+            builder.Services.AddSingleton<LoginApiService>();   // Token and Database services must be registered before this.
 
             // Add our controller(s). Adds an additional JSON option to remove the special naming policy from serialization
             //  behavior, which will retain PascalCase (as used by C#) rather than re-formatting to camelCase (the default).
@@ -52,8 +53,8 @@ namespace RPG_Login_API
             // After build but before run, test the database connection.
             using (var scope = app.Services.CreateScope())
             {
-                var loginApiService = scope.ServiceProvider.GetRequiredService<LoginApiService>();
-                if (!loginApiService.CheckConnectionStatus()) return;   // Exit application if not connected.
+                var databaseService = scope.ServiceProvider.GetRequiredService<DatabaseService>();
+                if (!databaseService.CheckConnectionStatus()) return;   // Exit application if not connected.
             }
 
 

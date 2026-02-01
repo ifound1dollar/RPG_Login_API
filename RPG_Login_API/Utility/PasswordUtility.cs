@@ -2,6 +2,10 @@
 
 namespace RPG_Login_API.Utility
 {
+    /// <summary>
+    /// This is a static class with a handful of methods to perform hashing and comparison. Should be used for
+    ///  password and token hashing.
+    /// </summary>
     public static class PasswordUtility
     {
         private const int SALT_SIZE = 16;

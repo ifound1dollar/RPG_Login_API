@@ -10,6 +10,7 @@ DESCRIBE (much of this can be pulled from NetworkServices description):
 - secret storage outside of the project/solution directory, noting that this is safe for development only (see NetworkServices description)
 - secure user account storage in database (database also secured by roles and password protection)
 - endpoints like login, register, confirm email, etc.
+- separate services for different parts of the application (database, API, tokens)
 - refresh and access token logic, with refresh tokens stored only in hashed form in the database AND access tokens retaining a role which determines actual API access permissions
 - security considerations server-side, like token invalidation (refresh deletion and access blacklist), failed login attempt counters, and password reset tokens
 - using built-in logger to handle all logging, currently console only and with default configuration

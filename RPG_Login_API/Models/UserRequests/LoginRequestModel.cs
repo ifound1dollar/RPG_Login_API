@@ -2,7 +2,7 @@
 {
     /// <summary>
     /// A data model containing simple login request data. Stores elements as raw strings that are pulled
-    ///  directly from the request body, and thus each object should be destroyed ASAP after use.
+    ///  directly from the request body.
     /// </summary>
     public class LoginRequestModel
     {

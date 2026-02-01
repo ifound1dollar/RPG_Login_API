@@ -10,17 +10,22 @@ using System.Text;
 
 namespace RPG_Login_API.Services
 {
+    /// <summary>
+    /// The TokenService is responsible for performing JWT token operations (create, parse, etc.) for the entire
+    ///  application. Receives a TokenSettings configuration which allows it to store in-memory the private
+    ///  JWT token key for use during validation and token creation. Should be registered as a singleton service.
+    /// </summary>
     public class TokenService
     {
-        private readonly byte[] _jwtKey = [];
+        private readonly byte[] _jwtKey;
         private readonly TokenValidationParameters _validationParameters;
-        private readonly JwtSecurityTokenHandler _handler = new();
-
+        private readonly JwtSecurityTokenHandler _handler;
         private readonly ILogger _logger;
 
         public TokenService(IOptions<TokenSettings> settings, ILogger<TokenService> logger)
         {
             _jwtKey = Encoding.UTF8.GetBytes(settings.Value.JwtKey);
+            _handler = new();
             _logger = logger;
 
             // IMPORTANT: These validation parameters must match the parameters in Program.cs.
@@ -44,8 +49,8 @@ namespace RPG_Login_API.Services
             {
                 Subject = new ClaimsIdentity(
                 [
-                    new Claim(JwtRegisteredClaimNames.UniqueName, username),       // We are using username, not email.
-                    new Claim(ClaimTypes.Role, "refresh")       // Store user permission in token.
+                    new Claim(JwtRegisteredClaimNames.UniqueName, username),    // We are using username, not email.
+                    new Claim(ClaimTypes.Role, "refresh")                       // Use this to loosely determine token purpose.
                 ]),
                 Expires = DateTime.UtcNow.AddDays(durationDays),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_jwtKey), SecurityAlgorithms.HmacSha256Signature)
@@ -95,22 +100,7 @@ namespace RPG_Login_API.Services
 
         #endregion
 
-        #region Public: Token Parsing / Reading
-
-        private bool TryReadJwtToken(string jwtToken, [NotNullWhen(true)] out JwtSecurityToken? token)
-        {
-            // First, try to read token string into SecurityToken.
-            token = (_handler.CanReadToken(jwtToken)) ? _handler.ReadJwtToken(jwtToken) : null;
-            return token != null;   // Returns true if token is valid, else false if null.
-        }
-
-        private string? ReadUsernameFromJwtToken(JwtSecurityToken token)
-        {
-            // Retrieve username from token. IMPORTANT: ClaimType.Name MAPS TO UniqueName.
-            var username = token.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.UniqueName)?.Value;
-
-            return username;    // May be null.
-        }
+        #region Public: Token Reading, Comparison, Validation
 
         public bool TryReadUsernameFromTokenString(string tokenString, [NotNullWhen(true)] out string? username)
         {
@@ -121,10 +111,6 @@ namespace RPG_Login_API.Services
 
             return username != null;
         }
-
-        #endregion
-
-        #region Public: Token Comparison and Validation
 
         public bool CompareTokens(string token1, string token2)
         {
@@ -150,6 +136,26 @@ namespace RPG_Login_API.Services
                 return false;
             }
 
+        }
+
+
+        #endregion
+
+        #region Private: Token String Parsing
+
+        private bool TryReadJwtToken(string jwtToken, [NotNullWhen(true)] out JwtSecurityToken? token)
+        {
+            // First, try to read token string into SecurityToken.
+            token = (_handler.CanReadToken(jwtToken)) ? _handler.ReadJwtToken(jwtToken) : null;
+            return token != null;   // Returns true if token is valid, else false if null.
+        }
+
+        private string? ReadUsernameFromJwtToken(JwtSecurityToken token)
+        {
+            // Retrieve username from token. IMPORTANT: ClaimType.Name MAPS TO UniqueName.
+            var username = token.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.UniqueName)?.Value;
+
+            return username;    // May be null.
         }
 
         #endregion
