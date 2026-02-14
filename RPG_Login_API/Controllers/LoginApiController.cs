@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 
 namespace RPG_Login_API.Controllers
 {
-    // PERMISSION ROLES CURRENTLY USED ARE: "user",
+    // PERMISSION ROLES CURRENTLY USED ARE: "not_confirmed", "reset_password", "full_access"
 
     [Authorize]         // Denotes that all requests BY DEFAULT require JWT token authentication (passed in the HTTP request).
                         //  The token passed to the controller must be the access token. Refresh tokens are handled manually.
@@ -18,7 +18,7 @@ namespace RPG_Login_API.Controllers
     [ApiController]
     public class LoginApiController : Controller
     {
-        // TODO: CONSIDER USING GLOBAL EXCEPTION HANDLING INTEAD OF TRY-CATCH BLOCKS IN EACH CONTROLLER METHOD
+        // TODO: CONSIDER USING GLOBAL EXCEPTION HANDLING MIDDLEWARE INSTEAD OF TRY-CATCH BLOCKS IN EACH CONTROLLER METHOD
 
         private readonly LoginApiService _service;
         private readonly ILogger _logger;
@@ -37,7 +37,7 @@ namespace RPG_Login_API.Controllers
         #region Public: User Account Access
 
         [AllowAnonymous]                // Logging in requires allowing un-authorized users to access endpoint.
-        [Route("users/login/refresh")]
+        [Route("users/login-refresh")]
         [HttpPost]
         public async Task<ActionResult> UserLoginFromRefreshAsync([FromBody] RefreshLoginRequestModel request)
         {
@@ -133,7 +133,7 @@ namespace RPG_Login_API.Controllers
             }
         }
 
-        [Authorize]                 // Require access token, any role. Only allow authenticated user to log out.
+        [Authorize(Roles = TokenService.Roles.Any)]     // Require access token, any role. Only allow authenticated user to log out.
         [Route("users/logout")]
         [HttpPost]
         public async Task<ActionResult> UserLogoutAsync()
@@ -141,8 +141,6 @@ namespace RPG_Login_API.Controllers
             // Retrieve account username and GUID from token.
             var username = User.Identity?.Name;                                 // UniqueName maps directly to Identity.Name.
             var guid = User.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;      // We use Jti for GUID on token creation.
-
-            // Validate request body immediately.
             if (username == null || guid == null)
             {
                 _logger.LogInformation("Client logout failed, incorrectly formatted access token in request header");
@@ -159,6 +157,73 @@ namespace RPG_Login_API.Controllers
                 _logger.LogError(ex.Message);
                 return Problem();
             }
+        }
+
+        [AllowAnonymous]            // Anyone can request a confirmation code (necessary to allow forgot password functionality).
+        [Route("users/confirmation-code")]
+        [HttpPost]
+        public async Task<ActionResult> UserSendConfirmationCodeAsync([FromBody] SendConfirmationCodeRequestModel request)
+        {
+            // TODO: CALL SERVICE METHOD TO FIND ACCOUNT BY PASSED-IN EMAIL OR USERNAME, THEN SEND CONFIRMATION CODE TO EMAIL
+
+            return Ok();
+        }
+
+        [Authorize(Roles = TokenService.Roles.EmailNotVerified)]    // Only allow endpoint access for accounts not yet verified.
+        [Route("users/verify-email")]
+        [HttpPost]
+        public async Task<ActionResult> UserVerifyAccountEmail([FromBody] VerifyEmailRequestModel request)
+        {
+            // Retrieve account username and GUID from token.
+            var username = User.Identity?.Name;                                 // UniqueName maps directly to Identity.Name.
+            var guid = User.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;      // We use Jti for GUID on token creation.
+            if (username == null || guid == null)
+            {
+                _logger.LogInformation("Client logout failed, incorrectly formatted access token in request header");
+                return BadRequest("Failed to logout: incorrectly formatted bearer token.");
+            }
+
+
+
+            // TODO: CALL SERVICE METHOD TO CHECK FOR CODE WITH USERNAME MAKING REQUEST, VERIFYING EMAIL IF MATCH AND NOT EXPIRED
+            // NOTE: Should invalidate the token GUID sent with this request upon successful verification (need new full-access token).
+            // SHOULD WE RETURN A FULL ACCESS TOKEN? PROBABLY
+
+            return Ok();
+        }
+
+        [AllowAnonymous]        // Allow anonymous to enable forgot password functionality; request must include a confirmation code.
+        [Route("users/request-password-reset")]
+        [HttpPost]
+        public async Task<ActionResult> UserRequestPasswordResetAsync([FromBody] RequestPasswordResetRequestModel request)
+        {
+            // TODO: CALL SERVICE METHOD TO FIND ACCOUNT MATCHING USERNAMEOREMAIL, THEN RETURN ACCESS TOKEN WITH RESET ROLE IF CONFIRMATION CODE MATCHES
+            // NOTE: We are not explicitly using a separate Reset Token because we can just use a very short
+            //  access token with the reset role.
+
+            return Ok(); 
+        }
+
+        [Authorize(Roles = TokenService.Roles.ResetPassword)]       // Only allow endpoint access for reset_password token roles.
+        [Route("users/reset-password")]
+        [HttpPost]
+        public async Task<ActionResult> UserResetPasswordAsync([FromBody] Models.UserRequests.ResetPasswordRequest request)
+        {
+            // Retrieve account username and GUID from token.
+            var username = User.Identity?.Name;                                 // UniqueName maps directly to Identity.Name.
+            var guid = User.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;      // We use Jti for GUID on token creation.
+            if (username == null || guid == null)
+            {
+                _logger.LogInformation("Client logout failed, incorrectly formatted access token in request header");
+                return BadRequest("Failed to logout: incorrectly formatted bearer token.");
+            }
+
+
+
+            // TODO: CALL SERVICE METHOD TO ENSURE ACCOUNT WITH USERNAME EXISTS (TOKEN IS VALIDATED HERE), THEN RESET PASSWORD IF REAL
+            // NOTE: We must invalidate (blacklist) the token GUID because full_access login is now needed.
+
+            return Ok();
         }
 
         #endregion

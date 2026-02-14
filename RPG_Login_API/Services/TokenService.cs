@@ -17,6 +17,15 @@ namespace RPG_Login_API.Services
     /// </summary>
     public class TokenService
     {
+        public class Roles
+        {
+            public const string EmailNotVerified = "not_verified";
+            public const string ResetPassword = "reset_password";
+            public const string FullAccess = "full_access";
+
+            public const string Any = EmailNotVerified + "," + ResetPassword + "," + FullAccess;
+        }
+
         private readonly byte[] _jwtKey;
         private readonly TokenValidationParameters _validationParameters;
         private readonly JwtSecurityTokenHandler _handler;
@@ -67,17 +76,17 @@ namespace RPG_Login_API.Services
             {
                 case 1:
                     {
-                        role = "not_confirmed";
+                        role = Roles.EmailNotVerified;
                         break;
                     }
                 case 2:
                     {
-                        role = "reset_password";
+                        role = Roles.ResetPassword;
                         break;
                     }
                 default:
                     {
-                        role = "full_access";
+                        role = Roles.FullAccess;
                         break;
                     }
             }

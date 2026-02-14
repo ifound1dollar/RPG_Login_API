@@ -25,7 +25,7 @@ Accept: application/json
 ###
 
 # @name login
-POST {{RPG_Login_API_HostAddress}}/api/users/login/refresh
+POST {{RPG_Login_API_HostAddress}}/api/users/login-refresh
 Content-Type: application/json
 Accept: application/json
 {
