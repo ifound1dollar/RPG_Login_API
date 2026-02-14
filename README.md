@@ -6,7 +6,7 @@ This project runs a login API backend which allows users to login, logout, and m
 
 # Technical Description
 
-The login web API runs on ASP.NET Core using .NET 8. It is designed from the ground up using industry best practices for structure and security, like heavily leveraging Dependency Injection and carefully considering separation of responsibilities, as well as ensuring that account information like passwords are stored in salted and hashed form within the database according to current OWASP standards. This project is still under development and will be expanded with more features like admin access and other game-relevant operations.
+The login web API runs on ASP.NET Core using .NET 8. It is designed from the ground up using industry best practices for structure and security, like heavily leveraging Dependency Injection and carefully considering separation of responsibilities, as well as ensuring that account information like passwords are stored in salted and hashed form within the database according to current OWASP standards. This project is still under development and will be expanded with more features like admin access and other game-relevant functionality.
 
 ### API Controller(s) and endpoints
 
