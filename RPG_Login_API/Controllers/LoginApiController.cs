@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using RPG_Login_API.Models.UserRequests;
 using RPG_Login_API.Services;
+using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text.RegularExpressions;
@@ -20,10 +21,10 @@ namespace RPG_Login_API.Controllers
     {
         // TODO: CONSIDER USING GLOBAL EXCEPTION HANDLING MIDDLEWARE INSTEAD OF TRY-CATCH BLOCKS IN EACH CONTROLLER METHOD
 
-        private readonly LoginApiService _service;
+        private readonly ILoginApiService _service;
         private readonly ILogger _logger;
 
-        public LoginApiController(LoginApiService service, ILogger<LoginApiController> logger)
+        public LoginApiController(ILoginApiService service, ILogger<LoginApiController> logger)
         {
             // Adding the LoginApiService object as a constructor parameter utilizes ASP.NET's built-in dependency
             //  injection system. The controller is effectively requesting the Service from the services container

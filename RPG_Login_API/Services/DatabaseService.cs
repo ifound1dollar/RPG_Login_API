@@ -2,6 +2,7 @@
 using MongoDB.Driver;
 using RPG_Login_API.Configuration;
 using RPG_Login_API.Models.MongoDB;
+using RPG_Login_API.Services.Interfaces;
 
 namespace RPG_Login_API.Services
 {
@@ -9,7 +10,7 @@ namespace RPG_Login_API.Services
     /// The DatabaseService is responsible for connecting to the database and actually performing CRUD
     ///  operations on it. Should be registered as a singleton service.
     /// </summary>
-    public class DatabaseService
+    public class DatabaseService : IDatabaseService
     {
         private readonly IMongoCollection<UserAccountModel> _userAccountsCollection;
         private readonly ILogger _logger;
@@ -52,7 +53,7 @@ namespace RPG_Login_API.Services
 
 
 
-        #region Public: MongoDB CRUD Methods
+        #region (Interface) Public: MongoDB CRUD Methods
 
         public async Task<List<UserAccountModel>> GetAllAsync()
         {

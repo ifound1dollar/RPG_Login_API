@@ -4,6 +4,7 @@ using MongoDB.Driver;
 using RPG_Login_API.Configuration;
 using RPG_Login_API.Models.MongoDB;
 using RPG_Login_API.Models.UserResponses;
+using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -15,19 +16,18 @@ namespace RPG_Login_API.Services
     /// The LoginApiService is responsible for performing API endpoint logic and is used directly by the
     ///  controller. This class depends on the DatabaseService and the TokenService. Can be scoped or singleton.
     /// </summary>
-    public class LoginApiService
+    public class LoginApiService : ILoginApiService
     {
         // TODO: ENSURE THERE ARE NO THREAD SAFETY CONCERNS WITH THESE CONTAINERS (we only await DatabaseService)
-        // Private in-memory containers for volatile data (ex. access tokens, login attempt tracking).
         private readonly Dictionary<string, DateTime> _tokenGuidBlacklist = [];     // Stores invalidated access tokens with expiration
 
 
 
-        private readonly DatabaseService _databaseService;
-        private readonly TokenService _tokenService;
+        private readonly IDatabaseService _databaseService;
+        private readonly ITokenService _tokenService;
         private readonly ILogger _logger;
 
-        public LoginApiService(DatabaseService databaseService, TokenService tokenService, ILogger<LoginApiService> logger)
+        public LoginApiService(IDatabaseService databaseService, ITokenService tokenService, ILogger<LoginApiService> logger)
         {
             _databaseService = databaseService;
             _tokenService = tokenService;
@@ -39,7 +39,7 @@ namespace RPG_Login_API.Services
 
 
 
-        #region Public: User Account Access API Logic
+        #region (Interface) Public: User Account Access API Logic
 
         public async Task<LoginResponseModel?> UserLoginFromRefreshAsync(string refreshTokenString)
         {

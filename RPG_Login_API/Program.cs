@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using RPG_Login_API.Configuration;
 using RPG_Login_API.Services;
+using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 using System.Security.Claims;
 using System.Text;
@@ -31,9 +32,9 @@ namespace RPG_Login_API
             builder.Logging.ClearProviders().AddConsole();
 
             // Add our desired services. Registers them to enable constructor injection.
-            builder.Services.AddSingleton<DatabaseService>();
-            builder.Services.AddSingleton<TokenService>();
-            builder.Services.AddSingleton<LoginApiService>();   // Token and Database services must be registered before this.
+            builder.Services.AddSingleton<IDatabaseService, DatabaseService>();
+            builder.Services.AddSingleton<ITokenService, TokenService>();
+            builder.Services.AddSingleton<ILoginApiService, LoginApiService>(); // Token and Database services must be registered before this.
 
             // Add our controller(s). Adds an additional JSON option to remove the special naming policy from serialization
             //  behavior, which will retain PascalCase (as used by C#) rather than re-formatting to camelCase (the default).
@@ -53,7 +54,7 @@ namespace RPG_Login_API
             // After build but before run, test the database connection.
             using (var scope = app.Services.CreateScope())
             {
-                var databaseService = scope.ServiceProvider.GetRequiredService<DatabaseService>();
+                var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
                 if (!databaseService.CheckConnectionStatus()) return;   // Exit application if not connected.
             }
 

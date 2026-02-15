@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using RPG_Login_API.Configuration;
+using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 using System.Diagnostics.CodeAnalysis;
 using System.IdentityModel.Tokens.Jwt;
@@ -15,7 +16,7 @@ namespace RPG_Login_API.Services
     ///  application. Receives a TokenSettings configuration which allows it to store in-memory the private
     ///  JWT token key for use during validation and token creation. Should be registered as a singleton service.
     /// </summary>
-    public class TokenService
+    public class TokenService : ITokenService
     {
         public class Roles
         {
@@ -50,7 +51,7 @@ namespace RPG_Login_API.Services
 
 
 
-        #region Public: Token Generation
+        #region (Interface) Public: Token Generation
 
         public string GenerateRefreshToken(string username, double durationDays = 30)
         {
@@ -109,16 +110,15 @@ namespace RPG_Login_API.Services
 
         #endregion
 
-        #region Public: Token Reading, Comparison, Validation
+        #region (Interface) Public: Token Reading, Comparison, Validation
 
         public bool TryReadUsernameFromTokenString(string tokenString, [NotNullWhen(true)] out string? username)
         {
             username = null;
+            if (!TryReadJwtToken(_handler, tokenString, out var token)) return false;
 
-            if (!TryReadJwtToken(tokenString, out var token)) return false;
-            username = ReadUsernameFromJwtToken(token);
-
-            return username != null;
+            // Assign username with valid string or null, returning true if valid and false if null.
+            return TryReadUsernameFromJwtToken(token, out username);
         }
 
         public bool ValidateToken(string token)
@@ -142,24 +142,24 @@ namespace RPG_Login_API.Services
 
         }
 
-
         #endregion
 
-        #region Private: Token String Parsing
 
-        private bool TryReadJwtToken(string jwtToken, [NotNullWhen(true)] out JwtSecurityToken? token)
+
+        #region Private Static: Token String Parsing
+
+        private static bool TryReadJwtToken(JwtSecurityTokenHandler handler, string jwtToken, [NotNullWhen(true)] out JwtSecurityToken? token)
         {
             // First, try to read token string into SecurityToken.
-            token = (_handler.CanReadToken(jwtToken)) ? _handler.ReadJwtToken(jwtToken) : null;
+            token = (handler.CanReadToken(jwtToken)) ? handler.ReadJwtToken(jwtToken) : null;
             return token != null;   // Returns true if token is valid, else false if null.
         }
 
-        private string? ReadUsernameFromJwtToken(JwtSecurityToken token)
+        private static bool TryReadUsernameFromJwtToken(JwtSecurityToken token, [NotNullWhen(true)] out string? username)
         {
             // Retrieve username from token. IMPORTANT: ClaimType.Name MAPS TO UniqueName.
-            var username = token.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.UniqueName)?.Value;
-
-            return username;    // May be null.
+            username = token.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.UniqueName)?.Value;
+            return username != null;
         }
 
         #endregion
