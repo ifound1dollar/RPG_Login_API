@@ -13,5 +13,9 @@ namespace RPG_Login_API.Services.Interfaces
         public Task<LoginResponseModel?> UserLoginAsync(string username, string password);
         public Task<LoginResponseModel?> UserRegisterAsync(string username, string email, string password);
         public Task UserLogoutAsync(string username, string tokenGuid);
+        public Task UserSendConfirmationCodeAsync(string usernameOrEmail);
+        public Task<LoginResponseModel?> UserVerifyAccountEmailAsync(string username, string confirmationCode);
+        public Task<PasswordResetTokenResponseModel?> UserRequestPasswordResetAsync(string usernameOrEmail, string confirmationCode);
+        public Task<ResetPasswordResponseModel?> UserResetPasswordAsync(string username, string tokenGuid, string newPassword);
     }
 }

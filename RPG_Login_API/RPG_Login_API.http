@@ -8,7 +8,7 @@ Content-Type: application/json
 Accept: application/json
 {
   "Username": "testusername",
-  "Password": "Testpassword1!"
+  "Password": "Testpassword2@"
 }
 
 ###
@@ -53,6 +53,48 @@ Accept: application/json
 ###
 
 
+POST {{RPG_Login_API_HostAddress}}/api/users/confirmation-code
+Content-Type: application/json
+{
+  "UsernameOrEmail": "testusername"
+}
+
+###
+
+# @name login
+POST {{RPG_Login_API_HostAddress}}/api/users/verify-email
+Authorization: Bearer {{login.response.body.$.AccessToken}}
+Content-Type: application/json
+Accept: application/json
+{
+  "Code": "000000"
+}
+
+###
+
+
+
+# @name reset
+POST {{RPG_Login_API_HostAddress}}/api/users/request-password-reset
+Content-Type: application/json
+{
+  "UsernameOrEmail": "testusername",
+  "Code": "000000"
+}
+
+###
+
+POST {{RPG_Login_API_HostAddress}}/api/users/reset-password
+Authorization: Bearer {{reset.response.body.$.ResetToken}}
+Content-Type: application/json
+{
+  "NewPassword": "Testpassword2@"
+}
+
+###
+
+
+
 
 ### User requests (pass access token as bearer)
 
@@ -60,4 +102,5 @@ GET {{RPG_Login_API_HostAddress}}/api/users/characters
 Authorization: Bearer {{login.response.body.$.AccessToken}}
 Accept: application/json
 ###
+
 

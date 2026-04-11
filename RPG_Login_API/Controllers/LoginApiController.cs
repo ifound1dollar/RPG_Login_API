@@ -165,9 +165,27 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserSendConfirmationCodeAsync([FromBody] SendConfirmationCodeRequestModel request)
         {
-            // TODO: CALL SERVICE METHOD TO FIND ACCOUNT BY PASSED-IN EMAIL OR USERNAME, THEN SEND CONFIRMATION CODE TO EMAIL
+            // Immediately reject any request with an empty account username/email body.
+            if (request.UsernameOrEmail == string.Empty)
+            {
+                _logger.LogInformation("Client confirmation code request failed, empty username/email field in request body");
+                return BadRequest("Failed to request confirmation code: username/email field must not be empty.");
+            }
 
-            return Ok();
+            try
+            {
+                await _service.UserSendConfirmationCodeAsync(request.UsernameOrEmail);
+                return Ok();
+
+                // NOTE: We always return 200 (OK) to prevent the confirmation code endpoint from being used as a method
+                //  for malicious actors to lookup existing usernames/emails. By always returning 200 (OK), users cannot
+                //  know whether an account is associated with the username/email.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return Problem();
+            }
         }
 
         [Authorize(Roles = TokenService.Roles.EmailNotVerified)]    // Only allow endpoint access for accounts not yet verified.
@@ -175,22 +193,32 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserVerifyAccountEmail([FromBody] VerifyEmailRequestModel request)
         {
+            // NOTE: Verifying account email returns a LoginResponseModel because the account state changes.
+
             // Retrieve account username and GUID from token.
             var username = User.Identity?.Name;                                 // UniqueName maps directly to Identity.Name.
             var guid = User.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;      // We use Jti for GUID on token creation.
             if (username == null || guid == null)
             {
-                _logger.LogInformation("Client logout failed, incorrectly formatted access token in request header");
-                return BadRequest("Failed to logout: incorrectly formatted bearer token.");
+                _logger.LogInformation("Email verification failed, incorrectly formatted access token in request header");
+                return BadRequest("Failed to verify email: incorrectly formatted bearer token.");
             }
 
+            try
+            {
+                var responseModel = await _service.UserVerifyAccountEmailAsync(username, request.Code);
+                if (responseModel == null)
+                {
+                    return Unauthorized("Email verification failed: invalid account username or confirmation code.");
+                }
 
-
-            // TODO: CALL SERVICE METHOD TO CHECK FOR CODE WITH USERNAME MAKING REQUEST, VERIFYING EMAIL IF MATCH AND NOT EXPIRED
-            // NOTE: Should invalidate the token GUID sent with this request upon successful verification (need new full-access token).
-            // SHOULD WE RETURN A FULL ACCESS TOKEN? PROBABLY
-
-            return Ok();
+                return Ok(responseModel);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return Problem();
+            }
         }
 
         [AllowAnonymous]        // Allow anonymous to enable forgot password functionality; request must include a confirmation code.
@@ -198,11 +226,33 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserRequestPasswordResetAsync([FromBody] RequestPasswordResetRequestModel request)
         {
-            // TODO: CALL SERVICE METHOD TO FIND ACCOUNT MATCHING USERNAMEOREMAIL, THEN RETURN ACCESS TOKEN WITH RESET ROLE IF CONFIRMATION CODE MATCHES
-            // NOTE: We are not explicitly using a separate Reset Token because we can just use a very short
-            //  access token with the reset role.
+            // NOTE: Requesting a password reset returns only an access token with the ResetPassword role. This endpoint ensures 
+            //  that only valid users can receive this access token by requiring a short-duration one-time-use confirmation code
+            //  alongside the passed-in account username or email.
+            // We are not explicitly using a separate Reset Token because we can just use a very short access token with the reset role.
 
-            return Ok(); 
+            // Immediately reject any request with an empty account username/email OR missing confirmation code in request body.
+            if (request.UsernameOrEmail == string.Empty || request.Code == string.Empty)
+            {
+                _logger.LogInformation("Client request password reset failed, empty username/email or confirmation code field request body");
+                return BadRequest("Failed to request password reset: account username/email and confirmation code fields must not be empty.");
+            }
+
+            try
+            {
+                var responseModel = await _service.UserRequestPasswordResetAsync(request.UsernameOrEmail, request.Code);
+                if (responseModel == null)
+                {
+                    return Unauthorized("Password reset request failed: invalid account username/email or invalid/expired confirmation code.");
+                }
+
+                return Ok(responseModel);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return Problem();
+            }
         }
 
         [Authorize(Roles = TokenService.Roles.ResetPassword)]       // Only allow endpoint access for reset_password token roles.
@@ -210,22 +260,48 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserResetPasswordAsync([FromBody] Models.UserRequests.ResetPasswordRequest request)
         {
+            // NOTE: On successful password reset, the user is fully logged-out server side.
+
             // Retrieve account username and GUID from token.
             var username = User.Identity?.Name;                                 // UniqueName maps directly to Identity.Name.
             var guid = User.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;      // We use Jti for GUID on token creation.
             if (username == null || guid == null)
             {
-                _logger.LogInformation("Client logout failed, incorrectly formatted access token in request header");
-                return BadRequest("Failed to logout: incorrectly formatted bearer token.");
+                _logger.LogInformation("Client password reset failed, incorrectly formatted access token in request header");
+                return BadRequest("Failed to reset password: incorrectly formatted bearer token.");
             }
 
+            // Verify passed-in password matches basic password regex.
+            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$";   // Password, 8+ chars, 1+ upper lower digit symbol
+            if (!Regex.IsMatch(request.NewPassword, passwordPattern))
+            {
+                _logger.LogInformation("Client password reset failed (username {username}), new password failed regex check",
+                    username);
+                return BadRequest("Failed to reset password: invalid new password");
+            }
+            // TODO: ADD CHECK TO PREVENT GENERIC PASSWORDS (USE LIBRARY FOR THIS). RETURN 422 'UNPROCESSABLE ENTITY' IF GENERIC.
+            // https://github.com/andrewlock/CommonPasswordsValidator
 
+            try
+            {
+                var responseModel = await _service.UserResetPasswordAsync(username, guid, request.NewPassword);
+                if (responseModel == null)
+                {
+                    return Unauthorized("Failed to reset password: invalid new password.");
+                    // Only possible failure within the Service is an invalid new password. Token is validated here.
+                }
 
-            // TODO: CALL SERVICE METHOD TO ENSURE ACCOUNT WITH USERNAME EXISTS (TOKEN IS VALIDATED HERE), THEN RESET PASSWORD IF REAL
-            // NOTE: We must invalidate (blacklist) the token GUID because full_access login is now needed.
-
-            return Ok();
+                return Ok(responseModel);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return Problem();
+            }
         }
+
+
+        // NOTE: LEGITIMATE ENDPOINTS WILL ONLY ALLOW ACCESS VIA THE full_access ROLE; OTHER ROLES WILL NOT BE ALLOWED
 
         #endregion
 
