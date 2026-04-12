@@ -66,6 +66,8 @@ namespace RPG_Login_API.Controllers
             }
         }
 
+
+
         [AllowAnonymous]        // Allow un-authorized users to access this endpoint (not logged in = no token yet).
         [Route("users/login")]  // Appends to route defined in class declaration. Can begin with '/' to override prefix in class declaration.
         [HttpPost]
@@ -96,6 +98,8 @@ namespace RPG_Login_API.Controllers
             
             // Consider adding a finally{} block that destroys the LoginRequestModel, removing raw password from memory.
         }
+
+
 
         [AllowAnonymous]
         [Route("users/register")]
@@ -134,6 +138,8 @@ namespace RPG_Login_API.Controllers
             }
         }
 
+
+
         [Authorize(Roles = TokenService.Roles.Any)]     // Require access token, any role. Only allow authenticated user to log out.
         [Route("users/logout")]
         [HttpPost]
@@ -159,6 +165,8 @@ namespace RPG_Login_API.Controllers
                 return Problem();
             }
         }
+
+
 
         [AllowAnonymous]            // Anyone can request a confirmation code (necessary to allow forgot password functionality).
         [Route("users/confirmation-code")]
@@ -187,6 +195,8 @@ namespace RPG_Login_API.Controllers
                 return Problem();
             }
         }
+
+
 
         [Authorize(Roles = TokenService.Roles.EmailNotVerified)]    // Only allow endpoint access for accounts not yet verified.
         [Route("users/verify-email")]
@@ -221,6 +231,8 @@ namespace RPG_Login_API.Controllers
             }
         }
 
+
+
         [AllowAnonymous]        // Allow anonymous to enable forgot password functionality; request must include a confirmation code.
         [Route("users/request-password-reset")]
         [HttpPost]
@@ -254,6 +266,8 @@ namespace RPG_Login_API.Controllers
                 return Problem();
             }
         }
+
+
 
         [Authorize(Roles = TokenService.Roles.ResetPassword)]       // Only allow endpoint access for reset_password token roles.
         [Route("users/reset-password")]

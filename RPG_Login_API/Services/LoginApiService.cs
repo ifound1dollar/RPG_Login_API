@@ -269,7 +269,7 @@ namespace RPG_Login_API.Services
             // CREATE CODE AND STORE LOCALLY | Generate a random alphanumeric code and add to container of confirmation codes.
 
             // TODO: REPLACE TEMPORARY IMPLEMENTATION HERE WITH LEGITIMATE RANDOM CODE AND ACTUALLY SEND TO EMAIL, USING CUSTOM SERVICE
-            string code = "000000";
+            string code = "00000000";
             _confirmationCodes[userAccount.Username] = new ConfirmationCodeData(code, durationMinutes: 5);  // Replace if existing.
             // SEND TO EMAIL
 
@@ -381,11 +381,13 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: GENERATE RESPONSE | On successful request, consume confirmation code and generate short-duration reset token.
-            _confirmationCodes.Remove(userAccount.Username);    // Consume code.
+            _confirmationCodes.Remove(userAccount.Username);
             var response = new PasswordResetTokenResponseModel()
             {
                 ResetToken = _tokenService.GenerateAccessToken(userAccount.Username, 2, durationMinutes: 5)
             };
+
+
 
             // FINALLY, log success and return password reset token response model.
             _logger.LogInformation("User request password reset successful (username: {username})", userAccount.Username);
