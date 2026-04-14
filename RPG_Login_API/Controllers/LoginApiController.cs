@@ -109,7 +109,7 @@ namespace RPG_Login_API.Controllers
             // Verify validity of email, username, and password with simple(?) regex.
             string emailPattern = @"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$";          // Email
             string usernamePattern = @"^[a-zA-Z0-9_]{5,20}$";                                   // Username, 5-20 chars, upper lower digit underscore
-            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$";   // Password, 8+ chars, 1+ upper lower digit symbol
+            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[#@$!%*?&]).{8,}$";  // Password, 8+ chars, 1+ upper lower digit symbol
             if (!Regex.IsMatch(registerRequest.Email, emailPattern) || !Regex.IsMatch(registerRequest.Username, usernamePattern)
                 || !Regex.IsMatch(registerRequest.Password, passwordPattern))
             {
@@ -286,7 +286,7 @@ namespace RPG_Login_API.Controllers
             }
 
             // Verify passed-in password matches basic password regex.
-            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$";   // Password, 8+ chars, 1+ upper lower digit symbol
+            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[#@$!%*?&]).{8,}$";  // Password, 8+ chars, 1+ upper lower digit symbol
             if (!Regex.IsMatch(request.NewPassword, passwordPattern))
             {
                 _logger.LogInformation("Client password reset failed (username {username}), new password failed regex check",
@@ -322,6 +322,18 @@ namespace RPG_Login_API.Controllers
         #region Public: Admin Account Access
 
         // These methods should use the '/api/admin/_' endpoint structure.
+
+        #endregion
+
+        #region Public: Ping
+
+        [AllowAnonymous]
+        [Route("ping")]
+        [HttpGet]
+        public async Task<ActionResult> Ping()
+        {
+            return Ok();
+        }
 
         #endregion
     }

@@ -87,6 +87,9 @@ namespace RPG_Login_API.Services
                     RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
                     AccessToken = _tokenService.GenerateAccessToken(username, statusCode, durationMinutes: 15)
                 };
+
+                // If email is not verified, also generate a confirmation code for this user.
+                GenerateAndSendConfirmationCode(userAccount.Username);
             }
             else
             {
@@ -148,6 +151,9 @@ namespace RPG_Login_API.Services
                     RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
                     AccessToken = _tokenService.GenerateAccessToken(username, statusCode, durationMinutes: 15)
                 };
+
+                // If email is not verified, also generate a confirmation code for this user.
+                GenerateAndSendConfirmationCode(userAccount.Username);
             }
             else
             {
@@ -209,6 +215,9 @@ namespace RPG_Login_API.Services
                 AccessToken = _tokenService.GenerateAccessToken(username, 1, durationMinutes: 15)
             };
 
+            // GENERATE EMAIL VERIFICATION CODE | Generate and send email verification code to user's email immediately.
+            GenerateAndSendConfirmationCode(userAccountModel.Username);
+
 
 
             // FINALLY, log success and return login response model.
@@ -267,11 +276,7 @@ namespace RPG_Login_API.Services
             }
 
             // CREATE CODE AND STORE LOCALLY | Generate a random alphanumeric code and add to container of confirmation codes.
-
-            // TODO: REPLACE TEMPORARY IMPLEMENTATION HERE WITH LEGITIMATE RANDOM CODE AND ACTUALLY SEND TO EMAIL, USING CUSTOM SERVICE
-            string code = "00000000";
-            _confirmationCodes[userAccount.Username] = new ConfirmationCodeData(code, durationMinutes: 5);  // Replace if existing.
-            // SEND TO EMAIL
+            GenerateAndSendConfirmationCode(userAccount.Username);
 
 
 
@@ -329,6 +334,7 @@ namespace RPG_Login_API.Services
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
             string hashedToken = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             userAccount.RefreshTokenHash = hashedToken;
+            userAccount.IsEmailVerified = true;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
 
@@ -421,6 +427,7 @@ namespace RPG_Login_API.Services
             // UPDATE DATABASE AND LOG OUT USER | Update password fields in user account document, then invalidate both tokens.
             userAccount.PasswordHash = passwordHash;
             userAccount.DoesPasswordNeedReset = false;      // Always reset to false regardless of whether reset was forced.
+            userAccount.IsEmailVerified = true;             // Reset requires email anyway, so implicitly verify email.
             userAccount.RefreshTokenHash = string.Empty;
             _tokenGuidBlacklist.Add(tokenGuid, DateTime.UtcNow.AddMinutes(5));  // Make blacklist expire at maximum duration to be safe.
 
@@ -433,6 +440,18 @@ namespace RPG_Login_API.Services
             return response;
         }
 
+
+        #endregion
+
+        #region Private: Utility
+
+        private void GenerateAndSendConfirmationCode(string username)
+        {
+            // TODO: REPLACE TEMPORARY IMPLEMENTATION HERE WITH LEGITIMATE RANDOM CODE AND ACTUALLY SEND TO EMAIL, USING CUSTOM SERVICE
+            string code = "00000000";
+            _confirmationCodes[username] = new ConfirmationCodeData(code, durationMinutes: 5);  // Replace if existing.
+            // SEND TO EMAIL
+        }
 
         #endregion
 
