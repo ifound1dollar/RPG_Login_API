@@ -8,7 +8,6 @@ namespace RPG_Login_API.Services.Interfaces
     /// </summary>
     public interface ILoginApiService
     {
-
         public Task<LoginResponseModel?> UserLoginFromRefreshAsync(string refreshTokenString);
         public Task<LoginResponseModel?> UserLoginAsync(string username, string password);
         public Task<LoginResponseModel?> UserRegisterAsync(string username, string email, string password);
@@ -16,6 +15,10 @@ namespace RPG_Login_API.Services.Interfaces
         public Task UserSendConfirmationCodeAsync(string usernameOrEmail);
         public Task<LoginResponseModel?> UserVerifyAccountEmailAsync(string username, string confirmationCode);
         public Task<PasswordResetTokenResponseModel?> UserRequestPasswordResetAsync(string usernameOrEmail, string confirmationCode);
-        public Task<ResetPasswordResponseModel?> UserResetPasswordAsync(string username, string tokenGuid, string newPassword);
+        public Task<bool> UserResetPasswordAsync(string username, string tokenGuid, string newPassword);
+
+        public Task<bool> CheckWhetherUserExistsAsync(string usernameOrEmail);
+        public Task<bool> CheckIfUsernameAndEmailAvailableAsync(string username, string email);
+        public Task<bool> CheckWhetherUserCanChangePassword(string usernameOrEmail);
     }
 }

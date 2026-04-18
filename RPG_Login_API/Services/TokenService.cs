@@ -121,7 +121,7 @@ namespace RPG_Login_API.Services
             return TryReadUsernameFromJwtToken(token, out username);
         }
 
-        public bool ValidateToken(string token)
+        public bool ValidateToken(string token, string guid = "")
         {
             // https://stackoverflow.com/questions/50204844/how-to-validate-a-jwt-token
             // May need to check this resource for validation testing. Might need to set ValidIssuer or ValidAudience
@@ -132,7 +132,16 @@ namespace RPG_Login_API.Services
                 ClaimsPrincipal principal = _handler.ValidateToken(token, _validationParameters, out var validatedToken);
 
                 // If no exception thrown above, then token is valid, so check expiration.
-                return (DateTime.UtcNow < validatedToken.ValidTo);
+                if (DateTime.UtcNow >= validatedToken.ValidTo) return false;
+
+                // If a GUID has been passed in, compare with the GUID stored in the token.
+                if (guid != string.Empty)
+                {
+                    return CompareTokenGuid(token, guid, _handler);     // Method returns false if mismatch.
+                }
+
+                // If no GUID passed in, then we need only compare expiration, which is already valid so return true.
+                return true;
             }
             catch (Exception ex)
             {
@@ -160,6 +169,22 @@ namespace RPG_Login_API.Services
             // Retrieve username from token. IMPORTANT: ClaimType.Name MAPS TO UniqueName.
             username = token.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.UniqueName)?.Value;
             return username != null;
+        }
+
+        private static bool CompareTokenGuid(string token, string passedInGuid, JwtSecurityTokenHandler handler)
+        {
+            // Try to read JWT token and extract stored GUID, then compare to passed-in GUID.
+            if (TryReadJwtToken(handler, token, out var jwtToken))
+            {
+                string? storedGuid = jwtToken.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti)?.Value;
+                if (storedGuid != null)
+                {
+                    return passedInGuid == storedGuid;
+                }
+            }
+
+            // If we do not explicitly return above, then no match could be found (or malformed token), so return false.
+            return false;
         }
 
         #endregion

@@ -105,6 +105,7 @@ namespace RPG_Login_API.Services
             // UPDATE DATABASE | After token generation, update document in database with newly-generated HASHED refresh token.
             string hashedToken = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             userAccount.RefreshTokenHash = hashedToken;
+            userAccount.LastLoginTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
 
@@ -169,6 +170,7 @@ namespace RPG_Login_API.Services
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
             string hashedToken = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             userAccount.RefreshTokenHash = hashedToken;
+            userAccount.LastLoginTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
 
@@ -181,28 +183,17 @@ namespace RPG_Login_API.Services
 
         public async Task<LoginResponseModel?> UserRegisterAsync(string username, string email, string password)
         {
-            // ENSURE UNIQUE USERNAME/EMAIL | Query database for any accounts with matching username or email.
-            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
-            if (userAccount != null)
-            {
-                _logger.LogInformation("User-submitted username already in use (username: {username})", username);
-                return null;
-            }
-            userAccount = await _databaseService.GetOneByEmailAsync(username);
-            if (userAccount != null)
-            {
-                _logger.LogInformation("User-submitted email already in use (email: {email})", email);
-                return null;
-            }
-
-            // CREATE NEW ACCOUNT MODEL | Username and email are unique, so create a new user document.
+            // CREATE NEW ACCOUNT MODEL | Username and email are unique (verified in controller), so create a new user document.
             string refreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30);
             UserAccountModel userAccountModel = new()
             {
                 Username = username,
                 Email = email,
+                AccountCreatedTime = DateTime.UtcNow,
                 PasswordHash = HashUtility.GenerateNewPasswordHash(password),
-                RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(refreshToken)    // Store hashed token in database.
+                RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(refreshToken),   // Store hashed token in database.
+                LastLoginTime = DateTime.UtcNow,
+                LastPasswordChangedTime = DateTime.UtcNow
                 // ObjectId is auto generated, and other values are left default.
             };
             await _databaseService.InsertOneAsync(userAccountModel);
@@ -286,11 +277,11 @@ namespace RPG_Login_API.Services
 
         public async Task<LoginResponseModel?> UserVerifyAccountEmailAsync(string username, string confirmationCode)
         {
-            // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
+            // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
-                _logger.LogInformation("Token user not found in database (username: {username})", username);
+                _logger.LogInformation("User not found in database (username: {username})", username);
                 return null;
             }
 
@@ -317,7 +308,7 @@ namespace RPG_Login_API.Services
                 if (codeData.AttemptCounter >= 3)
                 {
                     // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(userAccount.Username);
+                    _confirmationCodes.Remove(username);
                 }
                 return null;
             }
@@ -335,6 +326,7 @@ namespace RPG_Login_API.Services
             string hashedToken = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             userAccount.RefreshTokenHash = hashedToken;
             userAccount.IsEmailVerified = true;
+            userAccount.LastLoginTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
 
@@ -346,7 +338,7 @@ namespace RPG_Login_API.Services
 
         public async Task<PasswordResetTokenResponseModel?> UserRequestPasswordResetAsync(string usernameOrEmail, string confirmationCode)
         {
-            // FIND USER | Try to find user in database. Return null if we cannot find by username or email.
+            // FIND USER | Try to find user in database. We check for valid username/email in controller, so should always find an account.
             var userAccount = await _databaseService.GetOneByUsernameAsync(usernameOrEmail);
             if (userAccount == null)
             {
@@ -400,46 +392,107 @@ namespace RPG_Login_API.Services
             return response;
         }
 
-        public async Task<ResetPasswordResponseModel?> UserResetPasswordAsync(string username, string tokenGuid, string newPassword)
+        public async Task<bool> UserResetPasswordAsync(string username, string tokenGuid, string newPassword)
         {
             // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
                 _logger.LogInformation("Token user not found in database (username: {username})", username);
-                return null;
+                return false;
             }
 
             // VALID USER: VERIFY NEW PASSWORD DOES NOT MATCH PREVIOUS
             if (HashUtility.ComparePasswordToHash(newPassword, userAccount.PasswordHash))
             {
                 _logger.LogInformation("User tried to reset password to same as old password (username: {username})", username);
-                return null;
+                return false;
             }
             
-            // GENERATE NEW PASSWORD HASH AND RESPONSE
+            // GENERATE NEW PASSWORD HASH AND UPDATE DOCUMENT | Update various fields in account document now that password is reset.
             string passwordHash = HashUtility.GenerateNewPasswordHash(newPassword);
-            var response = new ResetPasswordResponseModel()
-            {
-                Success = true
-            };
-
-            // UPDATE DATABASE AND LOG OUT USER | Update password fields in user account document, then invalidate both tokens.
             userAccount.PasswordHash = passwordHash;
             userAccount.DoesPasswordNeedReset = false;      // Always reset to false regardless of whether reset was forced.
             userAccount.IsEmailVerified = true;             // Reset requires email anyway, so implicitly verify email.
+            userAccount.LastPasswordChangedTime = DateTime.UtcNow;
+
+            // LOG OUT USER AND ACTUALLY UPDATE DATABASE | Invalidate both tokens, then update database.
             userAccount.RefreshTokenHash = string.Empty;
             _tokenGuidBlacklist.Add(tokenGuid, DateTime.UtcNow.AddMinutes(5));  // Make blacklist expire at maximum duration to be safe.
-
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
 
 
             // FINALLY, log success and return reset password response model.
             _logger.LogInformation("User reset password successful (username: {username})", username);
-            return response;
+            return true;
         }
 
+
+
+        public async Task<bool> CheckWhetherUserExistsAsync(string usernameOrEmail)
+        {
+            // Try to find a user account matching the provided username or email.
+            var userAccount = await _databaseService.GetOneByUsernameAsync(usernameOrEmail);
+            if (userAccount == null)
+            {
+                userAccount = await _databaseService.GetOneByEmailAsync(usernameOrEmail);
+                if (userAccount == null)
+                {
+                    _logger.LogInformation("Username/email not found in database (input: {username})", usernameOrEmail);
+                    return false;
+                }
+            }
+
+            // If we do not explicitly return false, then there is a valid user, so return true;
+            return true;
+        }
+
+        public async Task<bool> CheckIfUsernameAndEmailAvailableAsync(string username, string email)
+        {
+            // ENSURE UNIQUE USERNAME/EMAIL | Query database for any accounts with matching username or email.
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount != null)
+            {
+                _logger.LogInformation("User-submitted username already in use (username: {username})", username);
+                return false;
+            }
+            userAccount = await _databaseService.GetOneByEmailAsync(username);
+            if (userAccount != null)
+            {
+                _logger.LogInformation("User-submitted email already in use (email: {email})", email);
+                return false;
+            }
+
+            // If we do not explicitly return false above, then both username and email are available.
+            return true;
+        }
+
+        public async Task<bool> CheckWhetherUserCanChangePassword(string usernameOrEmail)
+        {
+            // Try to find a user account matching the provided username or email. Return false if none found.
+            var userAccount = await _databaseService.GetOneByUsernameAsync(usernameOrEmail);
+            if (userAccount == null)
+            {
+                userAccount = await _databaseService.GetOneByEmailAsync(usernameOrEmail);
+                if (userAccount == null)
+                {
+                    _logger.LogInformation("Username/email not found in database (input: {username})", usernameOrEmail);
+                    return false;
+                }
+            }
+
+            // If password reset is enforced by the server, always return true.
+            if (userAccount.DoesPasswordNeedReset) return true;
+
+            // If password was changed less than 24 hours ago, return false.
+            if (DateTime.UtcNow - userAccount.LastPasswordChangedTime < TimeSpan.FromDays(1))
+            {
+                return false;
+            }
+
+            return true;
+        }
 
         #endregion
 

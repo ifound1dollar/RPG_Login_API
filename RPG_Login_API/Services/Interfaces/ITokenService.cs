@@ -12,6 +12,6 @@ namespace RPG_Login_API.Services.Interfaces
         public string GenerateAccessToken(string username, int stateCode, double durationMinutes = 15);
 
         public bool TryReadUsernameFromTokenString(string tokenString, [NotNullWhen(true)] out string? username);
-        public bool ValidateToken(string token);
+        public bool ValidateToken(string token, string guid = "");
     }
 }

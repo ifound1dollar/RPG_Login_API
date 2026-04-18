@@ -46,7 +46,7 @@ namespace RPG_Login_API.Controllers
             if (request.RefreshToken == string.Empty)
             {
                 _logger.LogInformation("Client refresh login failed, missing refresh token in request body");
-                return BadRequest("Failed to login with refresh token: refresh token field cannot be empty.");
+                return BadRequest("Failed to login with refresh token: refresh token field cannot be empty");
             }
 
             try
@@ -54,10 +54,15 @@ namespace RPG_Login_API.Controllers
                 var responseModel = await _service.UserLoginFromRefreshAsync(request.RefreshToken);
                 if (responseModel == null)
                 {
-                    return Unauthorized("Failed to login with refresh token: invalid or expired refresh token.");
+                    return Unauthorized("Failed to login with refresh token: invalid or expired refresh token");
                 }
 
                 return Ok(responseModel);
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable);
             }
             catch (Exception ex)
             {
@@ -77,7 +82,7 @@ namespace RPG_Login_API.Controllers
             if (loginRequest.Username == string.Empty || loginRequest.Password == string.Empty)
             {
                 _logger.LogInformation("Client login failed, missing username or password fields in request body");
-                return BadRequest("Login failed: username and password fields must not be empty.");
+                return BadRequest("Login failed: username and password fields must not be empty");
             }
 
             try
@@ -85,10 +90,15 @@ namespace RPG_Login_API.Controllers
                 var responseModel = await _service.UserLoginAsync(loginRequest.Username, loginRequest.Password);
                 if (responseModel == null)
                 {
-                    return Unauthorized("Login failed: invalid username or password.");
+                    return Unauthorized("Login failed: invalid username or password");
                 }
 
                 return Ok(responseModel);
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable);
             }
             catch (Exception ex)
             {
@@ -123,13 +133,25 @@ namespace RPG_Login_API.Controllers
 
             try
             {
-                var responseModel = await _service.UserRegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
-                if (responseModel == null)
+                // First, check if username and email are available.
+                if (!await _service.CheckIfUsernameAndEmailAvailableAsync(registerRequest.Username, registerRequest.Email))
                 {
                     return Conflict("Registration failed: unavailable username or email");
                 }
 
+                // Actually perform registration, returning generic problem if failed for any un-excepted reason.
+                var responseModel = await _service.UserRegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
+                if (responseModel == null)
+                {
+                    return Problem("Registration failed: an unexpected error occurred during registration, please try again");
+                }
+
                 return Ok(responseModel);
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable);
             }
             catch (Exception ex)
             {
@@ -151,13 +173,18 @@ namespace RPG_Login_API.Controllers
             if (username == null || guid == null)
             {
                 _logger.LogInformation("Client logout failed, incorrectly formatted access token in request header");
-                return BadRequest("Failed to logout: incorrectly formatted bearer token.");
+                return BadRequest("Failed to logout: incorrectly formatted bearer token");
             }
 
             try
             {
                 await _service.UserLogoutAsync(username, guid);
                 return Ok();
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable);
             }
             catch (Exception ex)
             {
@@ -177,7 +204,7 @@ namespace RPG_Login_API.Controllers
             if (request.UsernameOrEmail == string.Empty)
             {
                 _logger.LogInformation("Client confirmation code request failed, empty username/email field in request body");
-                return BadRequest("Failed to request confirmation code: username/email field must not be empty.");
+                return BadRequest("Failed to request confirmation code: username/email field must not be empty");
             }
 
             try
@@ -188,6 +215,11 @@ namespace RPG_Login_API.Controllers
                 // NOTE: We always return 200 (OK) to prevent the confirmation code endpoint from being used as a method
                 //  for malicious actors to lookup existing usernames/emails. By always returning 200 (OK), users cannot
                 //  know whether an account is associated with the username/email.
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable);
             }
             catch (Exception ex)
             {
@@ -203,26 +235,38 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserVerifyAccountEmail([FromBody] VerifyEmailRequestModel request)
         {
-            // NOTE: Verifying account email returns a LoginResponseModel because the account state changes.
-
             // Retrieve account username and GUID from token.
             var username = User.Identity?.Name;                                 // UniqueName maps directly to Identity.Name.
             var guid = User.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;      // We use Jti for GUID on token creation.
             if (username == null || guid == null)
             {
-                _logger.LogInformation("Email verification failed, incorrectly formatted access token in request header");
-                return BadRequest("Failed to verify email: incorrectly formatted bearer token.");
+                _logger.LogInformation("Client email verification failed, incorrectly formatted access token in request header");
+                return BadRequest("Failed to verify email: incorrectly formatted bearer token");
             }
 
             try
             {
+                // First, check whether there is a valid account for this username.
+                if (!await _service.CheckWhetherUserExistsAsync(username))
+                {
+                    return NotFound("Failed to verify email: account for username stored in token not found in database");
+                }
+
+                // If valid user, actually verify email. If response model is null, then the confirmation code was wrong or expired.
                 var responseModel = await _service.UserVerifyAccountEmailAsync(username, request.Code);
                 if (responseModel == null)
                 {
-                    return Unauthorized("Email verification failed: invalid account username or confirmation code.");
+                    return Unauthorized("Failed to verify email: invalid or expired confirmation code");
                 }
 
                 return Ok(responseModel);
+
+                // NOTE: Verifying account email returns a LoginResponseModel because the account state changes.
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable);
             }
             catch (Exception ex)
             {
@@ -247,18 +291,30 @@ namespace RPG_Login_API.Controllers
             if (request.UsernameOrEmail == string.Empty || request.Code == string.Empty)
             {
                 _logger.LogInformation("Client request password reset failed, empty username/email or confirmation code field request body");
-                return BadRequest("Failed to request password reset: account username/email and confirmation code fields must not be empty.");
+                return BadRequest("Failed to request password reset: account username/email and confirmation code fields must not be empty");
             }
 
             try
             {
+                // First, check whether there is a valid account for this username or email.
+                if (!await _service.CheckWhetherUserExistsAsync(request.UsernameOrEmail))
+                {
+                    return NotFound("Password reset request failed: account for provided username/email not found in database");
+                }
+
+                // If valid account, perform the actual password reset request.
                 var responseModel = await _service.UserRequestPasswordResetAsync(request.UsernameOrEmail, request.Code);
                 if (responseModel == null)
                 {
-                    return Unauthorized("Password reset request failed: invalid account username/email or invalid/expired confirmation code.");
+                    return Unauthorized("Password reset request failed: invalid or expired confirmation code");
                 }
 
                 return Ok(responseModel);
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable);
             }
             catch (Exception ex)
             {
@@ -282,7 +338,7 @@ namespace RPG_Login_API.Controllers
             if (username == null || guid == null)
             {
                 _logger.LogInformation("Client password reset failed, incorrectly formatted access token in request header");
-                return BadRequest("Failed to reset password: incorrectly formatted bearer token.");
+                return BadRequest("Failed to reset password: incorrectly formatted bearer token");
             }
 
             // Verify passed-in password matches basic password regex.
@@ -298,14 +354,31 @@ namespace RPG_Login_API.Controllers
 
             try
             {
-                var responseModel = await _service.UserResetPasswordAsync(username, guid, request.NewPassword);
-                if (responseModel == null)
+                // First, check whether there is a valid account for this username or email.
+                if (!await _service.CheckWhetherUserExistsAsync(username))
                 {
-                    return Unauthorized("Failed to reset password: invalid new password.");
-                    // Only possible failure within the Service is an invalid new password. Token is validated here.
+                    return NotFound("Failed to reset password: account for username stored in token not found in database");
                 }
 
-                return Ok(responseModel);
+                // Then, check whether the user is allowed to change their password (not too soon since last change).
+                if (!await _service.CheckWhetherUserCanChangePassword(username))
+                {
+                    return Forbid("Failed to reset password: password cannot be changed less than one day after it was last changed");
+                }
+
+                // If valid account, perform password update. Should only fail without throwing exception if password is invalid.
+                var success = await _service.UserResetPasswordAsync(username, guid, request.NewPassword);
+                if (!success)
+                {
+                    return Unauthorized("Failed to reset password: new password must be different from old password");
+                }
+
+                return Ok();
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable);
             }
             catch (Exception ex)
             {
