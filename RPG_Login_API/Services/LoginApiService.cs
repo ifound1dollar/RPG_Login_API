@@ -7,6 +7,7 @@ using RPG_Login_API.Models.MongoDB;
 using RPG_Login_API.Models.UserResponses;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
+using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
@@ -19,9 +20,8 @@ namespace RPG_Login_API.Services
     /// </summary>
     public class LoginApiService : ILoginApiService
     {
-        // TODO: ENSURE THERE ARE NO THREAD SAFETY CONCERNS WITH THESE CONTAINERS (we only await DatabaseService)
-        private readonly Dictionary<string, DateTime> _tokenGuidBlacklist = [];     // Stores invalidated access tokens with expiration
-        private readonly Dictionary<string, ConfirmationCodeData> _confirmationCodes = [];  // Stores temporary confirmation codes with expiration
+        // Stores temporary confirmation codes with expiration, use a concurrent dictionary for async safety.
+        private readonly ConcurrentDictionary<string, ConfirmationCodeData> _confirmationCodes = [];
 
 
 
@@ -103,8 +103,7 @@ namespace RPG_Login_API.Services
             }
 
             // UPDATE DATABASE | After token generation, update document in database with newly-generated HASHED refresh token.
-            string hashedToken = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            userAccount.RefreshTokenHash = hashedToken;
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             userAccount.LastLoginTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
@@ -168,8 +167,7 @@ namespace RPG_Login_API.Services
             }
 
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
-            string hashedToken = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            userAccount.RefreshTokenHash = hashedToken;
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             userAccount.LastLoginTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
@@ -228,9 +226,6 @@ namespace RPG_Login_API.Services
                 _logger.LogInformation("Token user not found in database (username: {username})", username);
                 return;
             }
-
-            // BLACKLIST OLD ACCESS TOKEN | Add old token's GUID to blacklist, which expires at token default duration (max).
-            _tokenGuidBlacklist.Add(tokenGuid, DateTime.UtcNow.AddMinutes(15));
 
             // UPDATE DATABASE | Remove the stored refresh token from the user account document, then update database.
             userAccount.RefreshTokenHash = string.Empty;
@@ -297,7 +292,7 @@ namespace RPG_Login_API.Services
             {
                 _logger.LogInformation("User tried to verify account email with an expired confirmation code (username: {username})",
                     username);
-                _confirmationCodes.Remove(username);    // Remove expired code data.
+                _confirmationCodes.Remove(username, out _);    // Remove expired code data, discarding out variable because it is not needed.
                 return null;
             }
 
@@ -309,13 +304,13 @@ namespace RPG_Login_API.Services
                 if (codeData.AttemptCounter >= 3)
                 {
                     // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(username);
+                    _confirmationCodes.Remove(username, out _);
                 }
                 return null;
             }
 
             // SUCCESS: GENERATE RESPONSE | On successful email verification, re-generate both refresh and access token (like login).
-            _confirmationCodes.Remove(username);    // Consume code.
+            _confirmationCodes.Remove(username, out _);     // Consume code.
             var response = new LoginResponseModel()
             {
                 LoginStatusCode = 0,        // Always full success status after successful verification.
@@ -324,8 +319,7 @@ namespace RPG_Login_API.Services
             };
 
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
-            string hashedToken = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            userAccount.RefreshTokenHash = hashedToken;
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             userAccount.IsEmailVerified = true;
             userAccount.LastLoginTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
@@ -362,7 +356,7 @@ namespace RPG_Login_API.Services
             {
                 _logger.LogInformation("User requested password reset with an expired confirmation code (username: {username})",
                     userAccount.Username);
-                _confirmationCodes.Remove(userAccount.Username);    // Remove expired code data.
+                _confirmationCodes.Remove(userAccount.Username, out _);     // Remove expired code data.
                 return null;
             }
 
@@ -374,13 +368,13 @@ namespace RPG_Login_API.Services
                 if (codeData.AttemptCounter >= 3)
                 {
                     // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(userAccount.Username);
+                    _confirmationCodes.Remove(userAccount.Username, out _);
                 }
                 return null;
             }
 
             // SUCCESS: GENERATE RESPONSE | On successful request, consume confirmation code and generate short-duration reset token.
-            _confirmationCodes.Remove(userAccount.Username);
+            _confirmationCodes.Remove(userAccount.Username, out _);
             var response = new PasswordResetTokenResponseModel()
             {
                 ResetToken = _tokenService.GenerateAccessToken(userAccount.Username, 2, durationMinutes: 5)
@@ -411,15 +405,13 @@ namespace RPG_Login_API.Services
             }
             
             // GENERATE NEW PASSWORD HASH AND UPDATE DOCUMENT | Update various fields in account document now that password is reset.
-            string passwordHash = HashUtility.GenerateNewPasswordHash(newPassword);
-            userAccount.PasswordHash = passwordHash;
+            userAccount.PasswordHash = HashUtility.GenerateNewPasswordHash(newPassword);
             userAccount.DoesPasswordNeedReset = false;      // Always reset to false regardless of whether reset was forced.
             userAccount.IsEmailVerified = true;             // Reset requires email anyway, so implicitly verify email.
             userAccount.LastPasswordChangedTime = DateTime.UtcNow;
 
-            // LOG OUT USER AND ACTUALLY UPDATE DATABASE | Invalidate both tokens, then update database.
+            // LOG OUT USER AND ACTUALLY UPDATE DATABASE | Invalidate user's refresh token, then update database.
             userAccount.RefreshTokenHash = string.Empty;
-            _tokenGuidBlacklist.Add(tokenGuid, DateTime.UtcNow.AddMinutes(5));  // Make blacklist expire at maximum duration to be safe.
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
 
@@ -439,18 +431,20 @@ namespace RPG_Login_API.Services
                 return null;
             }
 
-            // UPDATE DOCUMENT AND DATABASE | Update username and last username changed time in document, then update database.
-            userAccount.Username = newUsername;
-            userAccount.LastUsernameChangedTime = DateTime.UtcNow;
-            await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount); // Query by old username.
-
-            // RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens.
+            // RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens with new username.
             var response = new LoginResponseModel()
             {
                 LoginStatusCode = 0,        // This endpoint can only be accessed by a full-access token, so make full access again.
                 RefreshToken = _tokenService.GenerateRefreshToken(newUsername, durationDays: 30),
-                AccessToken = _tokenService.GenerateAccessToken(newUsername, 1, durationMinutes: 15)
+                AccessToken = _tokenService.GenerateAccessToken(newUsername, 0, durationMinutes: 15)
             };
+
+            // UPDATE DOCUMENT AND DATABASE | Update username and last username changed time in document, then update database.
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
+            userAccount.LastLoginTime = DateTime.UtcNow;
+            userAccount.Username = newUsername;
+            userAccount.LastUsernameChangedTime = DateTime.UtcNow;
+            await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount);     // Query by old username.
 
 
 
@@ -462,7 +456,7 @@ namespace RPG_Login_API.Services
 
         #endregion
 
-        #region Private: Account Status Checkers (async)
+        #region Public: Account Status Checkers (async)
 
         public async Task<bool> CheckWhetherUserExistsAsync(string usernameOrEmail)
         {
