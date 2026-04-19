@@ -125,7 +125,7 @@ namespace RPG_Login_API.Controllers
             {
                 _logger.LogInformation("Client registration failed (username {username}), email/username/password failed regex check",
                     registerRequest.Username);
-                return BadRequest("Registration failed: invalid input for email, username, or password");
+                return UnprocessableEntity("Registration failed: invalid input for email, username, or password");
             }
 
             // TODO: ADD CHECK TO PREVENT GENERIC PASSWORDS (USE LIBRARY FOR THIS). RETURN 422 'UNPROCESSABLE ENTITY' IF GENERIC.
@@ -328,7 +328,7 @@ namespace RPG_Login_API.Controllers
         [Authorize(Roles = TokenService.Roles.ResetPassword)]       // Only allow endpoint access for reset_password token roles.
         [Route("users/reset-password")]
         [HttpPost]
-        public async Task<ActionResult> UserResetPasswordAsync([FromBody] Models.UserRequests.ResetPasswordRequest request)
+        public async Task<ActionResult> UserResetPasswordAsync([FromBody] Models.UserRequests.ResetPasswordRequestModel request)
         {
             // NOTE: On successful password reset, the user is fully logged-out server side.
 
@@ -347,7 +347,7 @@ namespace RPG_Login_API.Controllers
             {
                 _logger.LogInformation("Client password reset failed (username {username}), new password failed regex check",
                     username);
-                return BadRequest("Failed to reset password: invalid new password");
+                return UnprocessableEntity("Failed to reset password: invalid new password");
             }
             // TODO: ADD CHECK TO PREVENT GENERIC PASSWORDS (USE LIBRARY FOR THIS). RETURN 422 'UNPROCESSABLE ENTITY' IF GENERIC.
             // https://github.com/andrewlock/CommonPasswordsValidator
@@ -361,7 +361,7 @@ namespace RPG_Login_API.Controllers
                 }
 
                 // Then, check whether the user is allowed to change their password (not too soon since last change).
-                if (!await _service.CheckWhetherUserCanChangePassword(username))
+                if (!await _service.CheckWhetherUserCanChangePasswordAsync(username))
                 {
                     return Forbid("Failed to reset password: password cannot be changed less than one day after it was last changed");
                 }
@@ -370,10 +370,75 @@ namespace RPG_Login_API.Controllers
                 var success = await _service.UserResetPasswordAsync(username, guid, request.NewPassword);
                 if (!success)
                 {
-                    return Unauthorized("Failed to reset password: new password must be different from old password");
+                    return Conflict("Failed to reset password: new password must be different from old password");
                 }
 
                 return Ok();
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return Problem();
+            }
+        }
+
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow username change if user has full access.
+        [Route("users/change-username")]
+        [HttpPost]
+        public async Task<ActionResult> UserChangeUsernameAsync([FromBody] ChangeUsernameRequest request)
+        {
+            // Retrieve account's existing username and GUID from token.
+            var username = User.Identity?.Name;                                 // UniqueName maps directly to Identity.Name.
+            var guid = User.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;      // We use Jti for GUID on token creation.
+            if (username == null || guid == null)
+            {
+                _logger.LogInformation("Client username change failed, incorrectly formatted access token in request header");
+                return BadRequest("Failed to change username: incorrectly formatted bearer token");
+            }
+
+            // Verify new username is not the same as the old username.
+            if (string.Equals(username, request.NewUsername))
+            {
+                _logger.LogInformation("Client username change failed, passed-in new username is the same as existing username");
+                return Conflict("Failed to change username: new username cannot be the same as existing username");
+            }
+
+            // Verify passed-in username matches basic username regex.
+            string usernamePattern = @"^[a-zA-Z0-9_]{5,20}$";                   // Username, 5-20 chars, upper lower digit underscore
+            if (!Regex.IsMatch(request.NewUsername, usernamePattern))
+            {
+                _logger.LogInformation("Client username change failed (existing username {username}), new username failed regex check",
+                    username);
+                return UnprocessableEntity("Failed to change username: invalid new username");
+            }
+
+            try
+            {
+                // First, check whether there is a valid account for this existing username (should always be).
+                if (!await _service.CheckWhetherUserExistsAsync(username))
+                {
+                    return NotFound("Failed to change username: account for username stored in token not found in database");
+                }
+
+                // Then, check whether the user is allowed to change their password (not too soon since last change).
+                if (!await _service.CheckWhetherUserCanChangeUsernameAsync(username))
+                {
+                    return Forbid("Failed to change username: username cannot be changed less than 30 days after it was last changed");
+                }
+
+                // If username passes regex, account for this user exists, and the user is allowed to change, actually change username.
+                var responseModel = await _service.UserChangeUsernameAsync(username, request.NewUsername);
+                if (responseModel == null)
+                {
+                    return Problem("Failed to change username: an unexpected error occurred when trying to change username, please try again");
+                }
+
+                return Ok(responseModel);
             }
             catch (TimeoutException ex)
             {

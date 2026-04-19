@@ -8,7 +8,7 @@ Content-Type: application/json
 Accept: application/json
 {
   "Username": "testusername",
-  "Password": "Testpassword2@"
+  "Password": "Testpassword1!"
 }
 
 ###
@@ -92,6 +92,17 @@ Content-Type: application/json
 }
 
 ###
+
+# @name login
+POST {{RPG_Login_API_HostAddress}}/api/users/change-username
+Authorization: Bearer {{login.response.body.$.AccessToken}}
+Content-Type: application/json
+{
+  "NewUsername": "testusername"
+}
+
+###
+
 
 
 

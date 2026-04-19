@@ -45,6 +45,9 @@ namespace RPG_Login_API.Models.MongoDB
         [BsonElement("last_password_changed_time")]
         public DateTime LastPasswordChangedTime { get; set; } = DateTime.MinValue;
 
+        [BsonElement("last_username_changed_time")]
+        public DateTime LastUsernameChangedTime { get; set; } = DateTime.MinValue;
+
 
 
         [BsonElement("character_ids")]

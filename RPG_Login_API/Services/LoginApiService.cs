@@ -193,7 +193,8 @@ namespace RPG_Login_API.Services
                 PasswordHash = HashUtility.GenerateNewPasswordHash(password),
                 RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(refreshToken),   // Store hashed token in database.
                 LastLoginTime = DateTime.UtcNow,
-                LastPasswordChangedTime = DateTime.UtcNow
+                LastPasswordChangedTime = DateTime.UtcNow,
+                LastUsernameChangedTime = DateTime.UtcNow,
                 // ObjectId is auto generated, and other values are left default.
             };
             await _databaseService.InsertOneAsync(userAccountModel);
@@ -394,7 +395,7 @@ namespace RPG_Login_API.Services
 
         public async Task<bool> UserResetPasswordAsync(string username, string tokenGuid, string newPassword)
         {
-            // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
+            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
@@ -428,7 +429,40 @@ namespace RPG_Login_API.Services
             return true;
         }
 
+        public async Task<LoginResponseModel?> UserChangeUsernameAsync(string existingUsername, string newUsername)
+        {
+            // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(existingUsername);
+            if (userAccount == null)
+            {
+                _logger.LogInformation("Token user not found in database (existing username: {username})", existingUsername);
+                return null;
+            }
 
+            // UPDATE DOCUMENT AND DATABASE | Update username and last username changed time in document, then update database.
+            userAccount.Username = newUsername;
+            userAccount.LastUsernameChangedTime = DateTime.UtcNow;
+            await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount); // Query by old username.
+
+            // RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens.
+            var response = new LoginResponseModel()
+            {
+                LoginStatusCode = 0,        // This endpoint can only be accessed by a full-access token, so make full access again.
+                RefreshToken = _tokenService.GenerateRefreshToken(newUsername, durationDays: 30),
+                AccessToken = _tokenService.GenerateAccessToken(newUsername, 1, durationMinutes: 15)
+            };
+
+
+
+            // FINALLY, log success and return reset password response model.
+            _logger.LogInformation("User successfully changed username (old username: {username} | new username: {newUsername})",
+                existingUsername, newUsername);
+            return response;
+        }
+
+        #endregion
+
+        #region Private: Account Status Checkers (async)
 
         public async Task<bool> CheckWhetherUserExistsAsync(string usernameOrEmail)
         {
@@ -468,7 +502,7 @@ namespace RPG_Login_API.Services
             return true;
         }
 
-        public async Task<bool> CheckWhetherUserCanChangePassword(string usernameOrEmail)
+        public async Task<bool> CheckWhetherUserCanChangePasswordAsync(string usernameOrEmail)
         {
             // Try to find a user account matching the provided username or email. Return false if none found.
             var userAccount = await _databaseService.GetOneByUsernameAsync(usernameOrEmail);
@@ -486,10 +520,23 @@ namespace RPG_Login_API.Services
             if (userAccount.DoesPasswordNeedReset) return true;
 
             // If password was changed less than 24 hours ago, return false.
-            if (DateTime.UtcNow - userAccount.LastPasswordChangedTime < TimeSpan.FromDays(1))
+            if (DateTime.UtcNow - userAccount.LastPasswordChangedTime < TimeSpan.FromDays(1)) return false;
+
+            return true;
+        }
+
+        public async Task<bool> CheckWhetherUserCanChangeUsernameAsync(string existingUsername)
+        {
+            // Try to find user in database, returning false if not found (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(existingUsername);
+            if (userAccount == null)
             {
+                _logger.LogInformation("Token user not found in database (username: {username})", existingUsername);
                 return false;
             }
+
+            // If username was changed less than 30 days ago, return false.
+            if (DateTime.UtcNow - userAccount.LastUsernameChangedTime < TimeSpan.FromDays(30)) return false;
 
             return true;
         }
