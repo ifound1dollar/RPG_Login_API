@@ -8,7 +8,7 @@
     {
         // CONSIDER IMPLEMENTING THE IDisposable INTERFACE TO DESTROY AND CLEAR MEMORY IMMEDIATELY
 
-        public string Username { get; set; } = string.Empty;
+        public string UsernameOrEmail { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
     }
 }

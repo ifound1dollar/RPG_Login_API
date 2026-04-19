@@ -7,7 +7,7 @@ POST {{RPG_Login_API_HostAddress}}/api/users/login
 Content-Type: application/json
 Accept: application/json
 {
-  "Username": "testusername",
+  "UsernameOrEmail": "testusername",
   "Password": "Testpassword1!"
 }
 
@@ -18,7 +18,7 @@ POST {{RPG_Login_API_HostAddress}}/api/users/login
 Content-Type: application/json
 Accept: application/json
 {
-  "Username": "seconduser",
+  "UsernameOrEmail": "seconduser",
   "Password": "Secondpassword2@"
 }
 
@@ -56,7 +56,7 @@ Accept: application/json
 POST {{RPG_Login_API_HostAddress}}/api/users/confirmation-code
 Content-Type: application/json
 {
-  "UsernameOrEmail": "testusername"
+  "UsernameOrEmail": "seconduser"
 }
 
 ###
@@ -67,7 +67,7 @@ Authorization: Bearer {{login.response.body.$.AccessToken}}
 Content-Type: application/json
 Accept: application/json
 {
-  "Code": "000000"
+  "Code": "00000000"
 }
 
 ###
@@ -78,8 +78,8 @@ Accept: application/json
 POST {{RPG_Login_API_HostAddress}}/api/users/request-password-reset
 Content-Type: application/json
 {
-  "UsernameOrEmail": "testusername",
-  "Code": "000000"
+  "UsernameOrEmail": "seconduser",
+  "Code": "00000000"
 }
 
 ###

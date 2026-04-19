@@ -1,6 +1,6 @@
 ﻿namespace RPG_Login_API.Models.UserRequests
 {
-    public class ResetPasswordRequestModel
+    public class PasswordResetRequestModel
     {
         public string NewPassword { get; set; } = string.Empty;
     }
