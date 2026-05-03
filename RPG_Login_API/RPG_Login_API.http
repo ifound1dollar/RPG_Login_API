@@ -52,6 +52,11 @@ Content-Type: application/json
 Accept: application/json
 ###
 
+GET {{RPG_Login_API_HostAddress}}/api/users/ping-online-status
+Authorization: Bearer {{login.response.body.$.AccessToken}}
+###
+
+
 
 POST {{RPG_Login_API_HostAddress}}/api/users/confirmation-code
 Content-Type: application/json

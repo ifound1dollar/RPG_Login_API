@@ -216,6 +216,42 @@ namespace RPG_Login_API.Controllers
             }
         }
 
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only considered online if logged in with full access.
+        [Route("users/ping-online-status")]
+        [HttpGet]
+        public async Task<ActionResult> UserPingOnlineStatus()
+        {
+            // Retrieve account username and GUID from token.
+            if (!TryReadUsernameAndGuidFromAccessToken(User, out var username, out var guid))
+            {
+                _logger.LogInformation("Client ping online status failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            try
+            {
+                await _service.UserPingOnlineStatusAsync(username);
+
+                _logger.LogInformation($"User ping online status successful (username: {username})");
+                return Ok();
+            }
+            catch (KeyNotFoundException ex)
+            {
+                _logger.LogInformation(ex.Message);
+                return NotFound("Failed to find user account for the provided username.");
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(503, "An unexpected database error occurred during online status ping, please try again.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return Problem("An unexpected error occurred during online status ping, please try again.");
+            }
+        }
+
 
 
         [AllowAnonymous]            // Anyone can request a confirmation code (necessary to allow forgot password functionality).

@@ -107,7 +107,7 @@ namespace RPG_Login_API.Services
 
             // UPDATE DATABASE | After token generation, update document in database with newly-generated HASHED refresh token.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            userAccount.LastLoginTime = DateTime.UtcNow;
+            userAccount.LastOnlineTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             return response;
@@ -167,7 +167,7 @@ namespace RPG_Login_API.Services
 
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            userAccount.LastLoginTime = DateTime.UtcNow;
+            userAccount.LastOnlineTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             return response;
@@ -196,7 +196,7 @@ namespace RPG_Login_API.Services
                 AccountCreatedTime = DateTime.UtcNow,
                 PasswordHash = HashUtility.GenerateNewPasswordHash(password),
                 RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(refreshToken),   // Store hashed token in database.
-                LastLoginTime = DateTime.UtcNow,
+                LastOnlineTime = DateTime.UtcNow,
                 LastPasswordChangedTime = DateTime.UtcNow,
                 LastUsernameChangedTime = DateTime.UtcNow,
                 // ObjectId is auto generated, and other values are left default.
@@ -232,6 +232,20 @@ namespace RPG_Login_API.Services
             userAccount.RefreshTokenHash = string.Empty;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
             
+        }
+
+        public async Task UserPingOnlineStatusAsync(string username)
+        {
+            // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                throw new KeyNotFoundException($"Ping online status failed: account for username stored in access token not found in database (username: {username})");
+            }
+
+            // If valid account, update document's last online time with current UTC time.
+            userAccount.LastOnlineTime = DateTime.UtcNow;
+            await _databaseService.UpdateOneByUsernameAsync(username, userAccount);
         }
 
         public async Task UserSendConfirmationCodeAsync(string usernameOrEmail)
@@ -312,7 +326,7 @@ namespace RPG_Login_API.Services
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             userAccount.IsEmailVerified = true;
-            userAccount.LastLoginTime = DateTime.UtcNow;
+            userAccount.LastOnlineTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             return response;
@@ -431,7 +445,7 @@ namespace RPG_Login_API.Services
 
             // UPDATE DOCUMENT AND DATABASE | Update username and last username changed time in document, then update database.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            userAccount.LastLoginTime = DateTime.UtcNow;
+            userAccount.LastOnlineTime = DateTime.UtcNow;
             userAccount.Username = newUsername;
             userAccount.LastUsernameChangedTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount);     // Query by old username.
