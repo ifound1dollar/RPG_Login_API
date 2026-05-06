@@ -256,25 +256,6 @@ namespace RPG_Login_API.Services
             
         }
 
-        public async Task UserPingInLauncherAsync(string username)
-        {
-            // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
-            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
-            if (userAccount == null)
-            {
-                throw new KeyNotFoundException($"Ping in launcher failed: account for username stored in access token not found in database (username: {username})");
-            }
-
-            // If valid account, update document's online status and last online time with current UTC time.
-            if (userAccount.OnlineStatus == UserAccountModel.AccountOnlineStatus.Offline)
-            {
-                // Only update status if current state is offline (Online and InGame take precedence).
-                userAccount.OnlineStatus = UserAccountModel.AccountOnlineStatus.InLauncher;
-            }
-            userAccount.LastOnlineTime = DateTime.UtcNow;
-            await _databaseService.UpdateOneByUsernameAsync(username, userAccount);
-        }
-
         public async Task UserSendConfirmationCodeAsync(string usernameOrEmail)
         {
             // FIND USER | Try to find user in database. Return null if we cannot find by username or email.
@@ -479,6 +460,48 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount);     // Query by old username.
 
             return response;
+        }
+
+        #endregion
+
+        #region Public: User account online status tracking
+
+        public async Task UserPingInLauncherAsync(string username)
+        {
+            // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                throw new KeyNotFoundException($"Ping in launcher failed: account for username stored in access token not found in database (username: {username})");
+            }
+
+            // If valid account, update document's online status and last online time with current UTC time.
+            if (userAccount.OnlineStatus == UserAccountModel.AccountOnlineStatus.Offline)
+            {
+                // Only update status if current state is offline (Online and InGame take precedence).
+                userAccount.OnlineStatus = UserAccountModel.AccountOnlineStatus.InLauncher;
+            }
+            userAccount.LastOnlineTime = DateTime.UtcNow;
+            await _databaseService.UpdateOneByUsernameAsync(username, userAccount);
+        }
+
+        public async Task UserNotifyLauncherExitAsync(string username)
+        {
+            // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                throw new KeyNotFoundException($"Notify launcher exit failed: account for username stored in access token not found in database (username: {username})");
+            }
+
+            // If valid account, update document's online status and last online time with current UTC time.
+            if (userAccount.OnlineStatus == UserAccountModel.AccountOnlineStatus.InLauncher)
+            {
+                // Only update status if current state is in launcher (Online and InGame take precedence).
+                userAccount.OnlineStatus = UserAccountModel.AccountOnlineStatus.Offline;
+            }
+            userAccount.LastOnlineTime = DateTime.UtcNow;
+            await _databaseService.UpdateOneByUsernameAsync(username, userAccount);
         }
 
         #endregion

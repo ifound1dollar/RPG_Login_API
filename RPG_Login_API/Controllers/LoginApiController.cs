@@ -216,42 +216,6 @@ namespace RPG_Login_API.Controllers
             }
         }
 
-        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only considered online if logged in with full access.
-        [Route("users/ping-in-launcher")]
-        [HttpGet]
-        public async Task<ActionResult> UserPingInLauncher()
-        {
-            // Retrieve account username and GUID from token.
-            if (!TryReadUsernameAndGuidFromAccessToken(User, out var username, out var guid))
-            {
-                _logger.LogInformation("Client ping in launcher failed, incorrectly formatted access token in request header");
-                return BadRequest("Malformed access token in API request.");
-            }
-
-            try
-            {
-                await _service.UserPingInLauncherAsync(username);
-
-                _logger.LogInformation($"User ping in launcher successful (username: {username})");
-                return Ok();
-            }
-            catch (KeyNotFoundException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return NotFound("Failed to find user account for the provided username.");
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during online status ping, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during online status ping, please try again.");
-            }
-        }
-
 
 
         [AllowAnonymous]            // Anyone can request a confirmation code (necessary to allow forgot password functionality).
@@ -513,6 +477,82 @@ namespace RPG_Login_API.Controllers
 
 
         // NOTE: LEGITIMATE ENDPOINTS WILL ONLY ALLOW ACCESS VIA THE full_access ROLE; OTHER ROLES WILL NOT BE ALLOWED
+
+        #endregion
+
+        #region Public: Client account state tracking
+
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only considered in launcher if logged in with full access.
+        [Route("users/ping-in-launcher")]
+        [HttpGet]
+        public async Task<ActionResult> UserPingInLauncher()
+        {
+            // Retrieve account username and GUID from token.
+            if (!TryReadUsernameAndGuidFromAccessToken(User, out var username, out var guid))
+            {
+                _logger.LogInformation("Client ping in launcher failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            try
+            {
+                await _service.UserPingInLauncherAsync(username);
+
+                _logger.LogInformation($"User ping in launcher successful (username: {username})");
+                return Ok();
+            }
+            catch (KeyNotFoundException ex)
+            {
+                _logger.LogInformation(ex.Message);
+                return NotFound("Failed to find user account for the provided username.");
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(503, "An unexpected database error occurred during ping in launcher, please try again.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return Problem("An unexpected error occurred during ping in launcher, please try again.");
+            }
+        }
+
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only process exit for fully-logged-in users.
+        [Route("users/notify-launcher-exit")]
+        [HttpGet]
+        public async Task<ActionResult> UserNotifyLauncherExit()
+        {
+            // Retrieve account username and GUID from token.
+            if (!TryReadUsernameAndGuidFromAccessToken(User, out var username, out var guid))
+            {
+                _logger.LogInformation("Client notify launcher exit failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            try
+            {
+                await _service.UserNotifyLauncherExitAsync(username);
+
+                _logger.LogInformation($"User notify launcher exit successful (username: {username})");
+                return Ok();
+            }
+            catch (KeyNotFoundException ex)
+            {
+                _logger.LogInformation(ex.Message);
+                return NotFound("Failed to find user account for the provided username.");
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError(ex.Message);
+                return StatusCode(503, "An unexpected database error occurred during notify launcher exit, please try again.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return Problem("An unexpected error occurred during notify launcher exit, please try again.");
+            }
+        }
 
         #endregion
 
