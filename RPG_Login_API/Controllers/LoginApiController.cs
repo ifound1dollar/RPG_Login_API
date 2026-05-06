@@ -217,22 +217,22 @@ namespace RPG_Login_API.Controllers
         }
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only considered online if logged in with full access.
-        [Route("users/ping-online-status")]
+        [Route("users/ping-in-launcher")]
         [HttpGet]
-        public async Task<ActionResult> UserPingOnlineStatus()
+        public async Task<ActionResult> UserPingInLauncher()
         {
             // Retrieve account username and GUID from token.
             if (!TryReadUsernameAndGuidFromAccessToken(User, out var username, out var guid))
             {
-                _logger.LogInformation("Client ping online status failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("Client ping in launcher failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
             try
             {
-                await _service.UserPingOnlineStatusAsync(username);
+                await _service.UserPingInLauncherAsync(username);
 
-                _logger.LogInformation($"User ping online status successful (username: {username})");
+                _logger.LogInformation($"User ping in launcher successful (username: {username})");
                 return Ok();
             }
             catch (KeyNotFoundException ex)

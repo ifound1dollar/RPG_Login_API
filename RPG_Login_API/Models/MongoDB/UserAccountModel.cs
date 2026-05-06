@@ -12,6 +12,10 @@ namespace RPG_Login_API.Models.MongoDB
     [BsonIgnoreExtraElements]   // THIS PREVENTS THROWING EXCEPTIONS IF EXTRA FIELDS ARE FOUND
     public class UserAccountModel
     {
+        public enum AccountOnlineStatus { Offline, InLauncher, Online, InGame }
+
+
+
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]
         public string? Id { get; set; }
@@ -33,6 +37,9 @@ namespace RPG_Login_API.Models.MongoDB
 
         [BsonElement("refresh_token")]
         public string RefreshTokenHash { get; set; } = string.Empty;
+
+        [BsonElement("online_status")]
+        public AccountOnlineStatus OnlineStatus { get; set; }
 
 
 
