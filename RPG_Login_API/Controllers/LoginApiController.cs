@@ -68,6 +68,11 @@ namespace RPG_Login_API.Controllers
                 _logger.LogInformation(ex.Message);
                 return Unauthorized("Invalid or expired refresh token.");
             }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogInformation(ex.Message);
+                return StatusCode(StatusCodes.Status403Forbidden, "Account already logged into launcher on another device, please try again later.");
+            }
             catch (TimeoutException ex)
             {
                 _logger.LogError(ex.Message);
@@ -111,6 +116,11 @@ namespace RPG_Login_API.Controllers
             {
                 _logger.LogInformation(ex.Message);
                 return Unauthorized("Invalid username/email or password, please try again.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogInformation(ex.Message);
+                return StatusCode(StatusCodes.Status403Forbidden, "Account already logged into launcher on another device, please try again later.");
             }
             catch (TimeoutException ex)
             {

@@ -74,6 +74,13 @@ namespace RPG_Login_API.Services
                 throw new UnauthorizedAccessException($"Refresh login failed: token is expired or found mismatched client GUID (username: {username})");
             }
 
+            // DISALLOW MULTIPLE LOGINS | If account is already logged into launcher, ensure it is not a zombie, then deny login.
+            if (userAccount.InLauncherStatus && (DateTime.UtcNow - userAccount.LastInLauncherTime > TimeSpan.FromMinutes(1)))
+            {
+                // IMPORTANT: We do not invalidate our refresh token, because it remains valid.
+                throw new InvalidOperationException($"Refresh login failed: user already logged in on another device");
+            }
+
             // GENERATE RESPONSE | Finally, token is confirmed fully valid so determine login response based on account state.
             LoginResponseModel response;
             if (!userAccount.IsEmailVerified || userAccount.DoesPasswordNeedReset)
@@ -105,14 +112,8 @@ namespace RPG_Login_API.Services
                     AccessToken = _tokenService.GenerateAccessToken(username, 0, durationMinutes: 15),
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
-
-                // If login is good, also set online status and last online time.
-                if (userAccount.OnlineStatus == UserAccountModel.AccountOnlineStatus.Offline)
-                {
-                    // Only update status if current state is offline (Online and InGame take precedence).
-                    userAccount.OnlineStatus = UserAccountModel.AccountOnlineStatus.InLauncher;
-                }
-                userAccount.LastOnlineTime = DateTime.UtcNow;
+                userAccount.InLauncherStatus = true;
+                userAccount.LastInLauncherTime = DateTime.UtcNow;
             }
 
             // UPDATE DATABASE | After token generation, update document in database with newly-generated HASHED refresh token.
@@ -141,6 +142,13 @@ namespace RPG_Login_API.Services
             if (!HashUtility.ComparePasswordToHash(password, userAccount.PasswordHash))
             {
                 throw new UnauthorizedAccessException($"Login failed: user-provided password does not match account's stored password (username: {userAccount.Username})");
+            }
+
+            // DISALLOW MULTIPLE LOGINS | If account is already logged into launcher, ensure it is not a zombie, then deny login.
+            if (userAccount.InLauncherStatus && (DateTime.UtcNow - userAccount.LastInLauncherTime > TimeSpan.FromMinutes(1)))
+            {
+                // IMPORTANT: We do not invalidate our refresh token, because it remains valid.
+                throw new InvalidOperationException($"Login failed: user already logged in on another device");
             }
 
             // SUCCESS: GENERATE RESPONSE | Determine how we will process login based on account state.
@@ -174,14 +182,8 @@ namespace RPG_Login_API.Services
                     AccessToken = _tokenService.GenerateAccessToken(usernameOrEmail, 0, durationMinutes: 15),
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
-
-                // If login is good, also set online status and last online time.
-                if (userAccount.OnlineStatus == UserAccountModel.AccountOnlineStatus.Offline)
-                {
-                    // Only update status if current state is offline (Online and InGame take precedence).
-                    userAccount.OnlineStatus = UserAccountModel.AccountOnlineStatus.InLauncher;
-                }
-                userAccount.LastOnlineTime = DateTime.UtcNow;
+                userAccount.InLauncherStatus = true;
+                userAccount.LastInLauncherTime = DateTime.UtcNow;
             }
 
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
@@ -211,13 +213,12 @@ namespace RPG_Login_API.Services
             {
                 Username = username,
                 Email = email,
-                AccountCreatedTime = DateTime.UtcNow,
                 PasswordHash = HashUtility.GenerateNewPasswordHash(password),
                 RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(refreshToken),   // Store hashed token in database.
-                LastOnlineTime = DateTime.UtcNow,
+                AccountCreatedTime = DateTime.UtcNow,
                 LastPasswordChangedTime = DateTime.UtcNow,
                 LastUsernameChangedTime = DateTime.UtcNow,
-                // ObjectId is auto generated, and other values are left default.
+                // ObjectId is auto generated, and other values are left default. In launcher status and time remain unset.
             };
             await _databaseService.InsertOneAsync(userAccountModel);
 
@@ -250,12 +251,9 @@ namespace RPG_Login_API.Services
                 throw new KeyNotFoundException($"Logout failed: account for username stored in access token not found in database (username: {username})");
             }
 
-            // UPDATE DATABASE | Remove the stored refresh token from the user account document, then update database.
-            if (userAccount.OnlineStatus == UserAccountModel.AccountOnlineStatus.InLauncher)
-            {
-                // Do not override Online or InGame (they take precidence); user status must remain if in game.
-                userAccount.OnlineStatus = UserAccountModel.AccountOnlineStatus.Offline;
-            }
+            // UPDATE DATABASE | Remove stored refresh token and update in launcher status and time.
+            userAccount.InLauncherStatus = false;
+            userAccount.LastInLauncherTime = DateTime.UtcNow;
             userAccount.RefreshTokenHash = string.Empty;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
             
@@ -340,8 +338,8 @@ namespace RPG_Login_API.Services
             // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             userAccount.IsEmailVerified = true;
-            userAccount.OnlineStatus = UserAccountModel.AccountOnlineStatus.InLauncher;
-            userAccount.LastOnlineTime = DateTime.UtcNow;
+            userAccount.InLauncherStatus = true;
+            userAccount.LastInLauncherTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             return response;
@@ -461,7 +459,8 @@ namespace RPG_Login_API.Services
 
             // UPDATE DOCUMENT AND DATABASE | Update username and last username changed time in document, then update database.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            userAccount.LastOnlineTime = DateTime.UtcNow;
+            userAccount.InLauncherStatus = true;
+            userAccount.LastInLauncherTime = DateTime.UtcNow;
             userAccount.Username = newUsername;
             userAccount.LastUsernameChangedTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount);     // Query by old username.
@@ -482,13 +481,9 @@ namespace RPG_Login_API.Services
                 throw new KeyNotFoundException($"Ping in launcher failed: account for username stored in access token not found in database (username: {username})");
             }
 
-            // If valid account, update document's online status and last online time with current UTC time.
-            if (userAccount.OnlineStatus == UserAccountModel.AccountOnlineStatus.Offline)
-            {
-                // Only update status if current state is offline (Online and InGame take precedence).
-                userAccount.OnlineStatus = UserAccountModel.AccountOnlineStatus.InLauncher;
-            }
-            userAccount.LastOnlineTime = DateTime.UtcNow;
+            // Update in launcher status and time for this account in the database.
+            userAccount.InLauncherStatus = true;
+            userAccount.LastInLauncherTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(username, userAccount);
         }
 
@@ -501,13 +496,9 @@ namespace RPG_Login_API.Services
                 throw new KeyNotFoundException($"Notify launcher exit failed: account for username stored in access token not found in database (username: {username})");
             }
 
-            // If valid account, update document's online status and last online time with current UTC time.
-            if (userAccount.OnlineStatus == UserAccountModel.AccountOnlineStatus.InLauncher)
-            {
-                // Only update status if current state is in launcher (Online and InGame take precedence).
-                userAccount.OnlineStatus = UserAccountModel.AccountOnlineStatus.Offline;
-            }
-            userAccount.LastOnlineTime = DateTime.UtcNow;
+            // Update in launcher status and set time of exit to last in launcher time.
+            userAccount.InLauncherStatus = false;
+            userAccount.LastInLauncherTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(username, userAccount);
         }
 

@@ -12,10 +12,6 @@ namespace RPG_Login_API.Models.MongoDB
     [BsonIgnoreExtraElements]   // THIS PREVENTS THROWING EXCEPTIONS IF EXTRA FIELDS ARE FOUND
     public class UserAccountModel
     {
-        public enum AccountOnlineStatus { Offline, InLauncher, Online, InGame }
-
-
-
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]
         public string? Id { get; set; }
@@ -38,17 +34,24 @@ namespace RPG_Login_API.Models.MongoDB
         [BsonElement("refresh_token")]
         public string RefreshTokenHash { get; set; } = string.Empty;
 
+
+
+        [BsonElement("in_launcher_status")]
+        public bool InLauncherStatus { get; set; } = false;
+
+        [BsonElement("last_in_launcher_time")]
+        public DateTime LastInLauncherTime { get; set; } = DateTime.MinValue;
+
         [BsonElement("online_status")]
-        [BsonRepresentation(BsonType.String)]
-        public AccountOnlineStatus OnlineStatus { get; set; }
+        public bool OnlineStatus { get; set; } = false;
+
+        [BsonElement("last_online_time")]
+        public DateTime LastOnlineTime { get; set; } = DateTime.MinValue;
 
 
 
         [BsonElement("account_created_time")]
         public DateTime AccountCreatedTime { get; set; } = DateTime.MinValue;
-
-        [BsonElement("last_online_time")]
-        public DateTime LastOnlineTime { get; set; } = DateTime.MinValue;
 
         [BsonElement("last_password_changed_time")]
         public DateTime LastPasswordChangedTime { get; set; } = DateTime.MinValue;
@@ -60,5 +63,8 @@ namespace RPG_Login_API.Models.MongoDB
 
         [BsonElement("character_ids")]
         public List<string> CharacterIds { get; set; } = [];
+
+        [BsonElement("last_played_character_id")]
+        public string LastPlayedCharacterId { get; set; } = string.Empty;
     }
 }
