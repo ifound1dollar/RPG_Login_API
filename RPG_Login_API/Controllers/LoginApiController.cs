@@ -132,7 +132,7 @@ namespace RPG_Login_API.Controllers
         public async Task<ActionResult> UserRegisterAsync([FromBody] RegisterRequestModel registerRequest)
         {
             // Verify validity of email, username, and password with simple(?) regex. This is also checked client-side.
-            string emailPattern = @"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$";
+            string emailPattern = @"^[^@\s]+@[^@\s]+\.[^@\s]+$";
             if (!Regex.IsMatch(registerRequest.Email, emailPattern))
             {
                 _logger.LogInformation($"Client registration failed, email failed regex check (email: {registerRequest.Email})");
