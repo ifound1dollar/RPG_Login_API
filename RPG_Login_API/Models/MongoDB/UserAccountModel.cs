@@ -39,6 +39,7 @@ namespace RPG_Login_API.Models.MongoDB
         public string RefreshTokenHash { get; set; } = string.Empty;
 
         [BsonElement("online_status")]
+        [BsonRepresentation(BsonType.String)]
         public AccountOnlineStatus OnlineStatus { get; set; }
 
 

@@ -76,7 +76,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during refresh login, please try again.");
+                return StatusCode(500, "An unexpected error occurred during refresh login, please try again.");
             }
         }
 
@@ -120,7 +120,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during login, please try again.");
+                return StatusCode(500, "An unexpected error occurred during login, please try again.");
             }
         }
 
@@ -174,7 +174,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during registration, please try again.");
+                return StatusCode(500, "An unexpected error occurred during registration, please try again.");
             }
         }
 
@@ -212,7 +212,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during logout, please try again.");
+                return StatusCode(500, "An unexpected error occurred during logout, please try again.");
             }
         }
 
@@ -259,7 +259,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during code request, please try again.");
+                return StatusCode(500, "An unexpected error occurred during code request, please try again.");
             }
         }
 
@@ -302,7 +302,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during email verification, please try again.");
+                return StatusCode(500, "An unexpected error occurred during email verification, please try again.");
             }
         }
 
@@ -351,7 +351,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during reset request, please try again.");
+                return StatusCode(500, "An unexpected error occurred during reset request, please try again.");
             }
         }
 
@@ -413,7 +413,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during password reset, please try again.");
+                return StatusCode(500, "An unexpected error occurred during password reset, please try again.");
             }
         }
 
@@ -471,7 +471,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during username change, please try again.");
+                return StatusCode(500, "An unexpected error occurred during username change, please try again.");
             }
         }
 
@@ -514,7 +514,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during ping in launcher, please try again.");
+                return StatusCode(500, "An unexpected error occurred during ping in launcher, please try again.");
             }
         }
 
@@ -550,7 +550,7 @@ namespace RPG_Login_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return Problem("An unexpected error occurred during notify launcher exit, please try again.");
+                return StatusCode(500, "An unexpected error occurred during notify launcher exit, please try again.");
             }
         }
 
