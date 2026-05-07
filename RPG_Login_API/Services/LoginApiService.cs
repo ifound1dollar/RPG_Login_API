@@ -75,7 +75,7 @@ namespace RPG_Login_API.Services
             }
 
             // DISALLOW MULTIPLE LOGINS | If account is already logged into launcher, ensure it is not a zombie, then deny login.
-            if (userAccount.InLauncherStatus && (DateTime.UtcNow - userAccount.LastInLauncherTime > TimeSpan.FromMinutes(1)))
+            if (userAccount.InLauncherStatus && (DateTime.UtcNow - userAccount.LastInLauncherTime < TimeSpan.FromSeconds(75)))
             {
                 // IMPORTANT: We do not invalidate the account's stored refresh token because the account that IS currently
                 //  logged in will have its associated refresh token stored. The device doing the duplicate login attempt
@@ -147,8 +147,9 @@ namespace RPG_Login_API.Services
             }
 
             // DISALLOW MULTIPLE LOGINS | If account is already logged into launcher, ensure it is not a zombie, then deny login.
-            if (userAccount.InLauncherStatus && (DateTime.UtcNow - userAccount.LastInLauncherTime > TimeSpan.FromMinutes(1)))
+            if (userAccount.InLauncherStatus && (DateTime.UtcNow - userAccount.LastInLauncherTime < TimeSpan.FromSeconds(75)))
             {
+                Console.Write("time difference: " + (DateTime.UtcNow - userAccount.LastInLauncherTime));
                 throw new InvalidOperationException($"Login failed: user already logged in on another device");
             }
 
