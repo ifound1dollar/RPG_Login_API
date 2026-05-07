@@ -83,6 +83,7 @@ namespace RPG_Login_API.Services
                 response = new LoginResponseModel()
                 {
                     Username = userAccount.Username,
+                    Email = userAccount.Email,
                     LoginStatusCode = statusCode,
                     RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
                     AccessToken = _tokenService.GenerateAccessToken(username, statusCode, durationMinutes: 15),
@@ -98,6 +99,7 @@ namespace RPG_Login_API.Services
                 response = new LoginResponseModel()
                 {
                     Username = userAccount.Username,
+                    Email = userAccount.Email,
                     LoginStatusCode = 0,
                     RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
                     AccessToken = _tokenService.GenerateAccessToken(username, 0, durationMinutes: 15),
@@ -150,6 +152,7 @@ namespace RPG_Login_API.Services
                 response = new LoginResponseModel()
                 {
                     Username = userAccount.Username,
+                    Email = userAccount.Email,
                     LoginStatusCode = statusCode,
                     RefreshToken = _tokenService.GenerateRefreshToken(usernameOrEmail, durationDays: 30),
                     AccessToken = _tokenService.GenerateAccessToken(usernameOrEmail, statusCode, durationMinutes: 15),
@@ -165,6 +168,7 @@ namespace RPG_Login_API.Services
                 response = new LoginResponseModel()
                 {
                     Username = userAccount.Username,
+                    Email = userAccount.Email,
                     LoginStatusCode = 0,
                     RefreshToken = _tokenService.GenerateRefreshToken(usernameOrEmail, durationDays: 30),
                     AccessToken = _tokenService.GenerateAccessToken(usernameOrEmail, 0, durationMinutes: 15),
@@ -221,6 +225,7 @@ namespace RPG_Login_API.Services
             var response = new LoginResponseModel()
             {
                 Username = username,
+                Email = email,
                 LoginStatusCode = 1,        // New accounts must always confirm email (code 1).
                 RefreshToken = refreshToken,
                 AccessToken = _tokenService.GenerateAccessToken(username, 1, durationMinutes: 15),
@@ -324,7 +329,8 @@ namespace RPG_Login_API.Services
             _confirmationCodes.Remove(username, out _);     // Consume code.
             var response = new LoginResponseModel()
             {
-                Username = username,
+                Username = userAccount.Username,
+                Email = userAccount.Email,
                 LoginStatusCode = 0,        // Always full success status after successful verification.
                 RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
                 AccessToken = _tokenService.GenerateAccessToken(username, 1, durationMinutes: 15),
@@ -446,6 +452,7 @@ namespace RPG_Login_API.Services
             var response = new LoginResponseModel()
             {
                 Username = newUsername,
+                Email = userAccount.Email,
                 LoginStatusCode = 0,        // This endpoint can only be accessed by a full-access token, so make full access again.
                 RefreshToken = _tokenService.GenerateRefreshToken(newUsername, durationDays: 30),
                 AccessToken = _tokenService.GenerateAccessToken(newUsername, 0, durationMinutes: 15),
