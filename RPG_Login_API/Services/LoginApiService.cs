@@ -336,6 +336,7 @@ namespace RPG_Login_API.Services
                 if ((DateTime.UtcNow - codeData.Created) < TimeSpan.FromMinutes(1))
                 {
                     _logger.LogInformation($"Confirmation code request failed: cannot generate new code within 60 seconds of previous (username/email: {usernameOrEmail})");
+                    return;
                 }
             }
 
