@@ -73,6 +73,17 @@ namespace RPG_Login_API.Utility
             return true;        // Will only reach here if there is no mismatch found.
         }
 
+        /// <summary>
+        /// Performs a fake password hash comparison, executing all typical hashing operation and byte comparison. This
+        ///  method should be used to simulate the server working on a legitimate password comparison, preventing potential
+        ///  timing attacks by a malicious actor. Does not actually compare or return a value, just does work.
+        /// </summary>
+        /// <param name="providedPassword"> The user-submitted password to perform a hash and comparison against a fake hash. </param>
+        public static void DoFakeHashComparison(string providedPassword)
+        {
+            ComparePasswordToHash(providedPassword, "$pbkdf2-sha256$600000$y1308fIYJsdsj8sRe1PAzOC2qY4Knkh9hKEwh3LnfXW9bMpV");
+        }
+
 
 
         /// <summary>

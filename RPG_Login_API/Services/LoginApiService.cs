@@ -23,7 +23,8 @@ namespace RPG_Login_API.Services
         // Stores temporary confirmation codes with expiration, use a concurrent dictionary for async safety.
         private readonly ConcurrentDictionary<string, ConfirmationCodeData> _confirmationCodes = [];
 
-
+        // Stores an array of failed login attempt timestamps for each user, used for account security purposes.
+        private readonly ConcurrentDictionary<string, List<DateTime>> _failedLoginAttempts = [];
 
         private readonly IDatabaseService _databaseService;
         private readonly ITokenService _tokenService;
@@ -127,8 +128,6 @@ namespace RPG_Login_API.Services
 
         public async Task<LoginResponseModel> UserLoginAsync(string usernameOrEmail, string password)
         {
-            // TODO: ADD FAILED LOGIN IN-MEMORY TRACKER DICTIONARY, AND ASSOCIATED LOGIC HERE
-
             // IMPORTANT: We check for a matching account here but do NOT return until password hash comparison to prevent
             //  timing attacks (performing a password hash comparison regardless of whether the account was found will
             //  cause this method to always return at the same time whether the account exists or the password is incorrect).
@@ -143,14 +142,21 @@ namespace RPG_Login_API.Services
             // PASSWORD HASH COMPARISON | Compare password using HashUtility class, first checking for valid user account.
             if (userAccount == null)
             {
-                // If failed to find account, perform fake hash comparison to return at the same time.
-                HashUtility.ComparePasswordToHash(password, "$pbkdf2-sha256$600000$y1308fIYJsdsj8sRe1PAzOC2qY4Knkh9hKEwh3LnfXW9bMpV");  // FAKE
+                // If failed to find account, perform FAKE hash comparison to return at the same time.
+                HashUtility.DoFakeHashComparison(password);
                 throw new UnauthorizedAccessException($"Login failed: user not found in database (username/email: {usernameOrEmail})");
             }
             if (!HashUtility.ComparePasswordToHash(password, userAccount.PasswordHash))
             {
                 // Else account DOES exist, so do legitimate password hash comparison and return if mismatch.
+                AppendFailedLoginAttemptToTracker(userAccount.Username);
                 throw new UnauthorizedAccessException($"Login failed: user-provided password does not match account's stored password (username: {userAccount.Username})");
+            }
+
+            // CHECK IF ACCOUNT LOCKED | Block the successful login if the account is temporarily locked because of failed attempts.
+            if (DoesAccountHaveTooManyFailedLoginAttempts(userAccount.Username))
+            {
+                throw new UnauthorizedAccessException($"Login failed: account is temporarily locked because of too many failed login attempts");
             }
 
             // DISALLOW MULTIPLE LOGINS | If account is already logged into launcher, ensure it is not a zombie, then deny login.
@@ -160,6 +166,7 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: GENERATE RESPONSE | Determine how we will process login based on account state.
+            ClearFailedLoginAttemptsOnSuccess(userAccount.Username);
             LoginResponseModel response;
             if (!userAccount.IsEmailVerified || userAccount.DoesPasswordNeedReset)
             {
@@ -537,6 +544,70 @@ namespace RPG_Login_API.Services
             string code = "00000000";
             _confirmationCodes[username] = new ConfirmationCodeData(code, durationMinutes: 5);  // Replace if existing.
             // SEND TO EMAIL
+        }
+
+        /// <summary>
+        /// Checks whether the given account has too many failed login attempts within the last five minutes. In
+        ///  addition to checking the number of attempts using a sliding window, also removes any old attempts
+        ///  that are not within the window.
+        /// </summary>
+        /// <param name="username"> The user account being checked for failed login attempt count. </param>
+        /// <returns> True if the account has too many failed login attempts within the last five minutes, else false. </returns>
+        private bool DoesAccountHaveTooManyFailedLoginAttempts(string username)
+        {
+            if (_failedLoginAttempts.TryGetValue(username, out var list))
+            {
+                // Iterate over all items in the list, incrementing tracker if within the last 5 minutes.
+                int count = 0;
+                DateTime now = DateTime.UtcNow;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (now - list[i] < TimeSpan.FromMinutes(5)) count++;
+                }
+
+                // Remove all elements in the list from more than five minutes ago (using actual count vs. our count).
+                if (list.Count > count)
+                {
+                    list.RemoveRange(0, list.Count - count);
+
+                    // If now empty, remove the key entirely.
+                    if (list.Count == 0) _failedLoginAttempts.Remove(username, out _);
+                }
+
+                // Finally, if our count is >= 3, return true.
+                return count >= 3;
+            }
+
+            // Return false if there is no entry for the passed-in username.
+            return false;
+        }
+
+        /// <summary>
+        /// Appends the current timestamp (DateTime.UtcNow) to the failed login attempt tracker for this account.
+        ///  This does not check any other elements or delete expired attempts outside the sliding window.
+        /// </summary>
+        /// <param name="username"> The user account which just had a failed login. </param>
+        private void AppendFailedLoginAttemptToTracker(string username)
+        {
+            // If an entry already exists, append a now timestamp to the list.
+            if (_failedLoginAttempts.TryGetValue(username, out var list))
+            {
+                list.Add(DateTime.UtcNow);
+                return;
+            }
+
+            // Else create a new dictionary entry for this user and with now as the only item in the list.
+            _failedLoginAttempts[username] = [ DateTime.UtcNow ];
+        }
+
+        /// <summary>
+        /// Clears all stored failed login attempts for the given account on successful login.
+        /// </summary>
+        /// <param name="username"> The user account which just successfully logged in with username/email and password. </param>
+        private void ClearFailedLoginAttemptsOnSuccess(string username)
+        {
+            // Remove the entire dictionary entry on successful login.
+            _failedLoginAttempts.Remove(username, out _);
         }
 
         #endregion
