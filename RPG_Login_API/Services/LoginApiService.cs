@@ -129,27 +129,33 @@ namespace RPG_Login_API.Services
         {
             // TODO: ADD FAILED LOGIN IN-MEMORY TRACKER DICTIONARY, AND ASSOCIATED LOGIC HERE
 
+            // IMPORTANT: We check for a matching account here but do NOT return until password hash comparison to prevent
+            //  timing attacks (performing a password hash comparison regardless of whether the account was found will
+            //  cause this method to always return at the same time whether the account exists or the password is incorrect).
+
             // FIND USER | Try to find user in database. Return null if we cannot find by username or email.
             var userAccount = await _databaseService.GetOneByUsernameAsync(usernameOrEmail);
             if (userAccount == null)
             {
                 userAccount = await _databaseService.GetOneByEmailAsync(usernameOrEmail);
-                if (userAccount == null)
-                {
-                    throw new KeyNotFoundException($"Login failed: user not found in database (username/email: {usernameOrEmail})");
-                }
             }
 
-            // COMPARE PASSWORD | If user found, compare password using PasswordUtility class. Return null if password mismatch.
+            // PASSWORD HASH COMPARISON | Compare password using HashUtility class, first checking for valid user account.
+            if (userAccount == null)
+            {
+                // If failed to find account, perform fake hash comparison to return at the same time.
+                HashUtility.ComparePasswordToHash(password, "$pbkdf2-sha256$600000$y1308fIYJsdsj8sRe1PAzOC2qY4Knkh9hKEwh3LnfXW9bMpV");  // FAKE
+                throw new UnauthorizedAccessException($"Login failed: user not found in database (username/email: {usernameOrEmail})");
+            }
             if (!HashUtility.ComparePasswordToHash(password, userAccount.PasswordHash))
             {
+                // Else account DOES exist, so do legitimate password hash comparison and return if mismatch.
                 throw new UnauthorizedAccessException($"Login failed: user-provided password does not match account's stored password (username: {userAccount.Username})");
             }
 
             // DISALLOW MULTIPLE LOGINS | If account is already logged into launcher, ensure it is not a zombie, then deny login.
             if (userAccount.InLauncherStatus && (DateTime.UtcNow - userAccount.LastInLauncherTime < TimeSpan.FromSeconds(75)))
             {
-                Console.Write("time difference: " + (DateTime.UtcNow - userAccount.LastInLauncherTime));
                 throw new InvalidOperationException($"Login failed: user already logged in on another device");
             }
 
@@ -201,12 +207,29 @@ namespace RPG_Login_API.Services
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount != null)
             {
-                throw new ArgumentException($"Registration failed: username already in use (username: {username})");
+                // If username is in use but account email was never verified and was created >30 days ago, delete it (zombie).
+                if (!userAccount.IsEmailVerified && DateTime.UtcNow - userAccount.AccountCreatedTime > TimeSpan.FromDays(30))
+                {
+                    await _databaseService.DeleteOneByUsernameAsync(userAccount.Username);
+                }
+                // Else username is actually in use, so return failure.
+                else
+                {
+                    throw new ArgumentException($"Registration failed: username already in use (username: {username})");
+                }
             }
             userAccount = await _databaseService.GetOneByEmailAsync(username);
             if (userAccount != null)
             {
-                throw new ArgumentException($"Registration failed: email already in use (email: {email})");
+                // Same logic as username check above.
+                if (!userAccount.IsEmailVerified && DateTime.UtcNow - userAccount.AccountCreatedTime > TimeSpan.FromDays(30))
+                {
+                    await _databaseService.DeleteOneByEmailAsync(userAccount.Email);
+                }
+                else
+                {
+                    throw new ArgumentException($"Registration failed: email already in use (email: {email})");
+                }
             }
 
             // CREATE NEW ACCOUNT MODEL | Username and email are unique (verified in controller), so create a new user document.

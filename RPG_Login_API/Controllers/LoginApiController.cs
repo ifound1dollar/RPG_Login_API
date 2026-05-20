@@ -26,6 +26,8 @@ namespace RPG_Login_API.Controllers
         private readonly ILoginApiService _service;
         private readonly ILogger _logger;
 
+        private readonly HashSet<string> _bannedPasswords;
+
         public LoginApiController(ILoginApiService service, ILogger<LoginApiController> logger)
         {
             // Adding the LoginApiService object as a constructor parameter utilizes ASP.NET's built-in dependency
@@ -33,6 +35,10 @@ namespace RPG_Login_API.Controllers
             //  configured in Program.cs.
             _service = service;
             _logger = logger;
+
+            // Load a list of 100000 most commonly used passwords, used to prevent unsafe passwords.
+            string badPasswordsFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Utility", "100k-most-used-passwords-NCSC.txt");
+            _bannedPasswords = new HashSet<string>(System.IO.File.ReadAllLines(badPasswordsFilePath), StringComparer.Ordinal);
         }
 
 
@@ -57,6 +63,11 @@ namespace RPG_Login_API.Controllers
 
                 _logger.LogInformation($"User refresh login successful (username: {responseModel.Username}) with login code {responseModel.LoginStatusCode}");
                 return Ok(responseModel);
+            }
+            catch (BadHttpRequestException ex)
+            {
+                _logger.LogInformation(ex.Message);
+                return BadRequest("Malformed refresh token in refresh login request.");
             }
             catch (KeyNotFoundException ex)
             {
@@ -106,14 +117,9 @@ namespace RPG_Login_API.Controllers
                 _logger.LogInformation($"User login successful (username: {responseModel.Username}) with login code {responseModel.LoginStatusCode}");
                 return Ok(responseModel);
             }
-            catch (KeyNotFoundException ex)
-            {
-                // IMPORTANT: Return generic failure to prevent username/email lookup attacks.
-                _logger.LogInformation(ex.Message);
-                return Unauthorized("Invalid username/email or password, please try again.");
-            }
             catch (UnauthorizedAccessException ex)
             {
+                // IMPORTANT: Return generic failure to prevent username/email lookup attacks.
                 _logger.LogInformation(ex.Message);
                 return Unauthorized("Invalid username/email or password, please try again.");
             }
@@ -154,14 +160,17 @@ namespace RPG_Login_API.Controllers
                 _logger.LogInformation($"Client registration failed, username failed regex check (username: {registerRequest.Username})");
                 return UnprocessableEntity("Username must be 5-20 characters and can only include uppercase and lowercase letters, digits, and underscores.");
             }
-            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[#@$!%*?&]).{8,}$";  // Password, 8+ chars, 1+ upper lower digit symbol
+            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$";   // Password, 8-64 chars, 1+ upper lower digit special (all specials)
             if (!Regex.IsMatch(registerRequest.Password, passwordPattern))
             {
                 _logger.LogInformation($"Client registration failed, password failed regex check (username: {registerRequest.Username})");
-                return UnprocessableEntity("New password must be 8+ characters and include at least one uppercase letter, lowercase letter, digit, and symbol.");
-
-                // TODO: ADD CHECK TO PREVENT GENERIC PASSWORDS (USE LIBRARY FOR THIS). RETURN 422 'UNPROCESSABLE ENTITY' IF GENERIC.
-                // https://github.com/andrewlock/CommonPasswordsValidator
+                return UnprocessableEntity("New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.");
+            }
+            // Also ensure password is not found in list of 100000 most-used-passwords (highly insecure).
+            if (_bannedPasswords.Contains(registerRequest.Password))
+            {
+                _logger.LogInformation($"Client registration failed, password found in list of 100000 insecure passwords (username: {registerRequest.Username})");
+                return UnprocessableEntity("Password does not meet minimum security standards, please submit a more secure password.");
             }
 
             try
@@ -382,14 +391,17 @@ namespace RPG_Login_API.Controllers
             }
 
             // Verify passed-in password matches basic password regex. This is also checked client-side.
-            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[#@$!%*?&]).{8,}$";  // Password, 8+ chars, 1+ upper lower digit symbol
+            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$";   // Password, 8-64 chars, 1+ upper lower digit special (all specials)
             if (!Regex.IsMatch(request.NewPassword, passwordPattern))
             {
                 _logger.LogInformation($"Client password reset failed, new password failed regex check (username: {username})");
-                return UnprocessableEntity("New password must be 8+ characters and include at least one uppercase letter, lowercase letter, digit, and symbol.");
-                
-                // TODO: ADD CHECK TO PREVENT GENERIC PASSWORDS (USE LIBRARY FOR THIS). RETURN 422 'UNPROCESSABLE ENTITY' IF GENERIC.
-                // https://github.com/andrewlock/CommonPasswordsValidator
+                return UnprocessableEntity("New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.");
+            }
+            // Also ensure password is not found in list of 100000 most-used-passwords (highly insecure).
+            if (_bannedPasswords.Contains(request.NewPassword))
+            {
+                _logger.LogInformation($"Client password reset failed, password found in list of 100000 insecure passwords (username: {username})");
+                return UnprocessableEntity("Password does not meet minimum security standards, please submit a more secure password.");
             }
 
             try
