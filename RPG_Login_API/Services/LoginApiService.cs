@@ -47,8 +47,6 @@ namespace RPG_Login_API.Services
 
         public async Task<(int, string, LoginResponseModel?)> UserLoginFromRefreshAsync(string refreshTokenString)
         {
-            throw new Exception("test exception");
-
             // PARSE TOKEN | Try to retrieve username and token object from the passed-in token string.
             if (!_tokenService.TryReadUsernameFromTokenString(refreshTokenString, out var username))
             {
