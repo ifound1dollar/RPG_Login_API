@@ -2,12 +2,15 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using RPG_Login_API.Models.UserRequests;
+using RPG_Login_API.Models.UserResponses;
 using RPG_Login_API.Services;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 using System.Diagnostics.CodeAnalysis;
 using System.IdentityModel.Tokens.Jwt;
+using System.Net;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
 
@@ -15,6 +18,7 @@ namespace RPG_Login_API.Controllers
 {
     // PERMISSION ROLES CURRENTLY USED ARE: "not_confirmed", "reset_password", "full_access"
 
+    [EnableRateLimiting("IpLimitPolicy")]   // Limit requests from any specific IP.
     [Authorize]         // Denotes that all requests BY DEFAULT require JWT token authentication (passed in the HTTP request).
                         //  The token passed to the controller must be the access token. Refresh tokens are handled manually.
     [Route("api")]      // Makes all endpoints begin with "[URL]/api"; endpoint methods below define suffixes.
@@ -57,42 +61,14 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Missing refresh token in API request.");
             }
 
-            try
+            (int code, string message, LoginResponseModel? response) = await _service.UserLoginFromRefreshAsync(request.RefreshToken);
+            if (response != null)
             {
-                var responseModel = await _service.UserLoginFromRefreshAsync(request.RefreshToken);
-
-                _logger.LogInformation($"User refresh login successful (username: {responseModel.Username}) with login code {responseModel.LoginStatusCode}");
-                return Ok(responseModel);
+                return StatusCode(code, response);
             }
-            catch (BadHttpRequestException ex)
+            else
             {
-                _logger.LogInformation(ex.Message);
-                return BadRequest("Malformed refresh token in refresh login request.");
-            }
-            catch (KeyNotFoundException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return NotFound("Failed to find user account for the provided username.");
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return Unauthorized("Invalid or expired refresh token.");
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return StatusCode(StatusCodes.Status403Forbidden, "Account already logged into launcher on another device, please try again later.");
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during refresh login, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during refresh login, please try again.");
+                return StatusCode(code, message);
             }
         }
 
@@ -110,33 +86,14 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Missing username/email or password in API request.");
             }
 
-            try
+            (int code, string message, LoginResponseModel? response) = await _service.UserLoginAsync(loginRequest.UsernameOrEmail, loginRequest.Password);
+            if (response != null)
             {
-                var responseModel = await _service.UserLoginAsync(loginRequest.UsernameOrEmail, loginRequest.Password);
-
-                _logger.LogInformation($"User login successful (username: {responseModel.Username}) with login code {responseModel.LoginStatusCode}");
-                return Ok(responseModel);
+                return StatusCode(code, response);
             }
-            catch (UnauthorizedAccessException ex)
+            else
             {
-                // IMPORTANT: Return generic failure to prevent username/email lookup attacks.
-                _logger.LogInformation(ex.Message);
-                return Unauthorized("Invalid username/email or password, please try again.");
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return StatusCode(StatusCodes.Status403Forbidden, "Account already logged into launcher on another device, please try again later.");
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during login, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during login, please try again.");
+                return StatusCode(code, message);
             }
         }
 
@@ -154,12 +111,14 @@ namespace RPG_Login_API.Controllers
                 _logger.LogInformation($"Client registration failed, email failed regex check (email: {registerRequest.Email})");
                 return UnprocessableEntity("Invalid email, please enter a valid email.");
             }
+
             string usernamePattern = @"^[a-zA-Z0-9_]{5,20}$";                                   // Username, 5-20 chars, upper lower digit underscore
             if (!Regex.IsMatch(registerRequest.Username, usernamePattern))
             {
                 _logger.LogInformation($"Client registration failed, username failed regex check (username: {registerRequest.Username})");
                 return UnprocessableEntity("Username must be 5-20 characters and can only include uppercase and lowercase letters, digits, and underscores.");
             }
+
             string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$";   // Password, 8-64 chars, 1+ upper lower digit special (all specials)
             if (!Regex.IsMatch(registerRequest.Password, passwordPattern))
             {
@@ -173,27 +132,14 @@ namespace RPG_Login_API.Controllers
                 return UnprocessableEntity("Password does not meet minimum security standards, please submit a more secure password.");
             }
 
-            try
+            (int code, string message, LoginResponseModel? response) = await _service.UserRegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
+            if (response != null)
             {
-                var responseModel = await _service.UserRegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
-
-                _logger.LogInformation($"New user registration successful (username: {registerRequest.Username} | email: {registerRequest.Email})");
-                return Ok(responseModel);
+                return StatusCode(code, response);
             }
-            catch (ArgumentException ex)
+            else
             {
-                _logger.LogInformation(ex.Message);
-                return Conflict(ex.Message);    // Directly send message because it denotes whether username or email is already in use.
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during registration, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during registration, please try again.");
+                return StatusCode(code, message);
             }
         }
 
@@ -211,28 +157,8 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            try
-            {
-                await _service.UserLogoutAsync(username);
-
-                _logger.LogInformation($"User logout successful (username: {username})");
-                return Ok();
-            }
-            catch (KeyNotFoundException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return NotFound("Failed to find user account for the provided username.");
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during logout, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during logout, please try again.");
-            }
+            (int code, string message) = await _service.UserLogoutAsync(username);
+            return StatusCode(code, message);
         }
 
 
@@ -253,33 +179,8 @@ namespace RPG_Login_API.Controllers
             //  for malicious actors to lookup existing usernames/emails. By always returning 200 (OK), users cannot
             //  know whether an account is associated with the username/email.
 
-            try
-            {
-                await _service.UserSendConfirmationCodeAsync(request.UsernameOrEmail);
-
-                _logger.LogInformation($"User confirmation code request successful (username/email: {request.UsernameOrEmail})");
-                return Ok();
-            }
-            catch (KeyNotFoundException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return Ok();                            // See note above.
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return Ok();                            // See note above.
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during code request, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during code request, please try again.");
-            }
+            await _service.UserSendConfirmationCodeAsync(request.UsernameOrEmail);
+            return Ok();
         }
 
 
@@ -296,32 +197,14 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            try
+            (int code, string message, LoginResponseModel? response) = await _service.UserVerifyAccountEmailAsync(username, request.Code);
+            if (response != null)
             {
-                var responseModel = await _service.UserVerifyAccountEmailAsync(username, request.Code);
-
-                _logger.LogInformation($"User email verification successful (username: {username})");
-                return Ok(responseModel);
+                return StatusCode(code, response);
             }
-            catch (KeyNotFoundException ex)
+            else
             {
-                _logger.LogInformation(ex.Message);
-                return NotFound("Failed to find user account for the provided username.");
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return Unauthorized("Invalid or expired confirmation code.");
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during email verification, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during email verification, please try again.");
+                return StatusCode(code, message);
             }
         }
 
@@ -344,33 +227,14 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Missing username/email or confirmation code in API request.");
             }
 
-            try
+            (int code, string message, PasswordResetTokenResponseModel? response) = await _service.UserRequestPasswordResetAsync(request.UsernameOrEmail, request.Code);
+            if (response != null)
             {
-                var responseModel = await _service.UserRequestPasswordResetAsync(request.UsernameOrEmail, request.Code);
-
-                _logger.LogInformation($"User request password reset successful (username/email: {request.UsernameOrEmail})");
-                return Ok(responseModel);
+                return StatusCode(code, response);
             }
-            catch (KeyNotFoundException ex)
+            else
             {
-                // IMPORTANT: Do not tell the client whether username/email is valid to prevent lookup attacks.
-                _logger.LogInformation(ex.Message);
-                return Unauthorized("Invalid or expired confirmation code.");
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return Unauthorized("Invalid or expired confirmation code.");
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during reset request, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during reset request, please try again.");
+                return StatusCode(code, message);
             }
         }
 
@@ -397,46 +261,15 @@ namespace RPG_Login_API.Controllers
                 _logger.LogInformation($"Client password reset failed, new password failed regex check (username: {username})");
                 return UnprocessableEntity("New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.");
             }
-            // Also ensure password is not found in list of 100000 most-used-passwords (highly insecure).
+            // Also ensure password is not found in list of 100000 most-used-passwords.
             if (_bannedPasswords.Contains(request.NewPassword))
             {
                 _logger.LogInformation($"Client password reset failed, password found in list of 100000 insecure passwords (username: {username})");
                 return UnprocessableEntity("Password does not meet minimum security standards, please submit a more secure password.");
             }
 
-            try
-            {
-                await _service.UserResetPasswordAsync(username, request.NewPassword);
-
-                _logger.LogInformation($"User password reset successful (username: {username})");
-                return Ok();
-            }
-            catch (KeyNotFoundException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return NotFound("Failed to find user account for the provided username.");
-            }
-            catch (InvalidOperationException ex)
-            {
-                // CUSTOM 493 STATUS CODE FOR NOT YET (403 Forbidden is reserved for bad token).
-                _logger.LogInformation(ex.Message);
-                return StatusCode(493, "Cannot change password within 24 hours of previous change.");
-            }
-            catch (ArgumentException ex)
-            {
-                _logger.LogInformation(ex.Message);
-                return Conflict("New password cannot be the same as old password.");
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during password reset, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during password reset, please try again.");
-            }
+            (int code, string message) = await _service.UserResetPasswordAsync(username, request.NewPassword);
+            return StatusCode(code, message);
         }
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow username change if user has full access.
@@ -466,34 +299,14 @@ namespace RPG_Login_API.Controllers
                 return UnprocessableEntity("New username must be 5-20 characters and can only include uppercase and lowercase letters, digits, and underscores.");
             }
 
-            try
+            (int code, string message, LoginResponseModel? response) = await _service.UserChangeUsernameAsync(username, request.NewUsername);
+            if (response != null)
             {
-                // If username passes regex, account for this user exists, and the user is allowed to change, actually change username.
-                var responseModel = await _service.UserChangeUsernameAsync(username, request.NewUsername);
-
-                _logger.LogInformation($"User successfully changed username (old username: {username} | new username: {request.NewUsername})");
-                return Ok(responseModel);
+                return StatusCode(code, response);
             }
-            catch (KeyNotFoundException ex)
+            else
             {
-                _logger.LogInformation(ex.Message);
-                return NotFound("Failed to find user account for the provided username.");
-            }
-            catch (InvalidOperationException ex)
-            {
-                // CUSTOM 493 STATUS CODE FOR NOT YET (403 Forbidden is reserved for bad token).
-                _logger.LogInformation(ex.Message);
-                return StatusCode(493, "Cannot change username within 30 days of previous change.");
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during username change, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during username change, please try again.");
+                return StatusCode(code, message);
             }
         }
 
@@ -516,27 +329,14 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            try
+            (int code, string message) = await _service.UserPingInLauncherAsync(username);
+            if (code == 204)
             {
-                await _service.UserPingInLauncherAsync(username);
-
-                _logger.LogInformation($"User ping in launcher successful (username: {username})");
-                return Ok();
+                return NoContent();
             }
-            catch (KeyNotFoundException ex)
+            else
             {
-                _logger.LogInformation(ex.Message);
-                return NotFound("Failed to find user account for the provided username.");
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during ping in launcher, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during ping in launcher, please try again.");
+                return StatusCode(code, message);
             }
         }
 
@@ -552,27 +352,14 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            try
+            (int code, string message) = await _service.UserNotifyLauncherExitAsync(username);
+            if (code == 204)
             {
-                await _service.UserNotifyLauncherExitAsync(username);
-
-                _logger.LogInformation($"User notify launcher exit successful (username: {username})");
-                return Ok();
+                return NoContent();
             }
-            catch (KeyNotFoundException ex)
+            else
             {
-                _logger.LogInformation(ex.Message);
-                return NotFound("Failed to find user account for the provided username.");
-            }
-            catch (TimeoutException ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(503, "An unexpected database error occurred during notify launcher exit, please try again.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                return StatusCode(500, "An unexpected error occurred during notify launcher exit, please try again.");
+                return StatusCode(code, message);
             }
         }
 

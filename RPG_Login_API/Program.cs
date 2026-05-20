@@ -7,6 +7,7 @@ using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 
 namespace RPG_Login_API
 {
@@ -41,6 +42,26 @@ namespace RPG_Login_API
             builder.Services.AddControllers().AddJsonOptions(
                 options => options.JsonSerializerOptions.PropertyNamingPolicy = null);
 
+            // Add our custom UniversalExceptionHandler.
+            builder.Services.AddExceptionHandler<UniversalExceptionHandler>();
+            builder.Services.AddProblemDetails();
+
+            // Add per-IP rate limiter. https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit?view=aspnetcore-7.0#sliding-window-limiter
+            builder.Services.AddRateLimiter(options =>
+            {
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                options.AddPolicy("IpLimitPolicy", context =>
+                    RateLimitPartition.GetSlidingWindowLimiter(
+                        partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                        factory: _ => new SlidingWindowRateLimiterOptions
+                        {
+                            PermitLimit = 10,                   // Request limit
+                            Window = TimeSpan.FromMinutes(1),   // Time window
+                            SegmentsPerWindow = 3,              // Number of segments within one window
+                            QueueLimit = 0                      // Disallow queue to block immediately on rate limit exceeded
+                        }));
+            });
+
 
 
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -66,6 +87,9 @@ namespace RPG_Login_API
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
+
+            app.UseRateLimiter();           // Use our defined rate limiter above.
+            app.UseExceptionHandler();      // Use our custom exception handler added above.
 
             app.UseHttpsRedirection();
 
