@@ -332,7 +332,7 @@ namespace RPG_Login_API.Services
             }
 
             // PREVENT NEW CODE SPAM | Ensure there is not an existing confirmation code for this account created less than 60 seconds ago.
-            if (_confirmationCodes.TryGetValue(usernameOrEmail, out var codeData))
+            if (_confirmationCodes.TryGetValue(userAccount.Email, out var codeData))
             {
                 // If existing code was created less than 60 seconds ago, log error and return.
                 if ((DateTime.UtcNow - codeData.Created) < TimeSpan.FromMinutes(1))
@@ -359,7 +359,7 @@ namespace RPG_Login_API.Services
             }
 
             // CHECK FOR AND VALIDATE EXISTING CODE | Try to find stored code in dictionary, returning null if does not exist or expired.
-            if (!_confirmationCodes.TryGetValue(username, out var codeData))
+            if (!_confirmationCodes.TryGetValue(userAccount.Email, out var codeData))
             {
                 _logger.LogInformation($"Email verification failed: no local confirmation code found for this user (username: {username})");
                 return (401, "Invalid or expired confirmation code.", null);
@@ -367,7 +367,7 @@ namespace RPG_Login_API.Services
             if (codeData.Expiration < DateTime.UtcNow)
             {
                 // Remove expired code data, discarding out variable because it is not needed.
-                _confirmationCodes.Remove(username, out _);
+                _confirmationCodes.Remove(userAccount.Email, out _);
 
                 _logger.LogInformation($"Email verification failed: expired user-provided confirmation code (username: {username})");
                 return (401, "Invalid or expired confirmation code.", null);
@@ -381,7 +381,7 @@ namespace RPG_Login_API.Services
                 if (codeData.AttemptCounter >= 3)
                 {
                     // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(username, out _);
+                    _confirmationCodes.Remove(userAccount.Email, out _);
                 }
 
                 _logger.LogInformation($"Email verification failed: incorrect confirmation code submitted by user (username: {username})");
@@ -389,7 +389,7 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: GENERATE LOGIN RESPONSE | On successful email verification, re-generate both refresh and access token (like login).
-            _confirmationCodes.Remove(username, out _);     // Consume code.
+            _confirmationCodes.Remove(userAccount.Email, out _);     // Consume code.
             var response = new LoginResponseModel()
             {
                 Username = userAccount.Username,
@@ -429,7 +429,7 @@ namespace RPG_Login_API.Services
             }
 
             // CHECK FOR AND VALIDATE EXISTING CODE | Try to find stored code in dictionary, returning null if does not exist or expired.
-            if (!_confirmationCodes.TryGetValue(userAccount.Username, out var codeData))
+            if (!_confirmationCodes.TryGetValue(userAccount.Email, out var codeData))
             {
                 _logger.LogInformation($"Request password reset failed: no local confirmation code found for this user (username: {userAccount.Username})");
                 return (401, "Invalid or expired confirmation code.", null);
@@ -437,7 +437,7 @@ namespace RPG_Login_API.Services
             if (codeData.Expiration < DateTime.UtcNow)
             {
                 // Remove expired code data, discarding out variable because it is not needed.
-                _confirmationCodes.Remove(userAccount.Username, out _);
+                _confirmationCodes.Remove(userAccount.Email, out _);
 
                 _logger.LogInformation($"Request password reset failed: expired user-provided confirmation code (username: {userAccount.Username})");
                 return (401, "Invalid or expired confirmation code.", null);
@@ -451,7 +451,7 @@ namespace RPG_Login_API.Services
                 if (codeData.AttemptCounter >= 3)
                 {
                     // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(userAccount.Username, out _);
+                    _confirmationCodes.Remove(userAccount.Email, out _);
                 }
 
                 _logger.LogInformation($"Request password reset failed: incorrect confirmation code submitted by user (username: {userAccount.Username})");
@@ -459,7 +459,7 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: GENERATE RESPONSE | On successful request, consume confirmation code and generate short-duration reset token.
-            _confirmationCodes.Remove(userAccount.Username, out _);
+            _confirmationCodes.Remove(userAccount.Email, out _);
             var response = new PasswordResetTokenResponseModel()
             {
                 Username = userAccount.Username,
@@ -584,7 +584,7 @@ namespace RPG_Login_API.Services
             }
 
             // CHECK FOR AND VALIDATE EXISTING CODE | Try to find stored code in dictionary, returning null if does not exist or expired.
-            if (!_confirmationCodes.TryGetValue(userAccount.Username, out var codeData))
+            if (!_confirmationCodes.TryGetValue(userAccount.Email, out var codeData))
             {
                 _logger.LogInformation($"Request email change failed: no local confirmation code found for this user (username: {userAccount.Username})");
                 return (401, "Invalid or expired confirmation code.", null);
@@ -592,7 +592,7 @@ namespace RPG_Login_API.Services
             if (codeData.Expiration < DateTime.UtcNow)
             {
                 // Remove expired code data, discarding out variable because it is not needed.
-                _confirmationCodes.Remove(userAccount.Username, out _);
+                _confirmationCodes.Remove(userAccount.Email, out _);
 
                 _logger.LogInformation($"Request email change failed: expired user-provided confirmation code (username: {userAccount.Username})");
                 return (401, "Invalid or expired confirmation code.", null);
@@ -606,7 +606,7 @@ namespace RPG_Login_API.Services
                 if (codeData.AttemptCounter >= 3)
                 {
                     // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(userAccount.Username, out _);
+                    _confirmationCodes.Remove(userAccount.Email, out _);
                 }
 
                 _logger.LogInformation($"Request email failed: incorrect confirmation code submitted by user (username: {userAccount.Username})");
@@ -614,7 +614,7 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: GENERATE RESPONSE | On successful request, consume confirmation code and generate short-duration email change token.
-            _confirmationCodes.Remove(userAccount.Username, out _);
+            _confirmationCodes.Remove(userAccount.Email, out _);
             var response = new EmailChangeTokenResponseModel()
             {
                 Username = userAccount.Username,
@@ -682,18 +682,20 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.");
             }
 
-            // CHECK FOR AND VALIDATE EXISTING CODE | Try to find stored code in dictionary, returning null if does not exist or expired.
-            if (!_confirmationCodes.TryGetValue(userAccount.Username, out var codeData))
+            // CHECK FOR AND VALIDATE EXISTING CODE | Search for pending new email, not regular email.
+            if (!_confirmationCodes.TryGetValue(userAccount.PendingNewEmail, out var codeData))
             {
-                _logger.LogInformation($"Verify new email failed: no local confirmation code found for this user (username: {userAccount.Username})");
+                _logger.LogInformation($"Verify new email failed: no local confirmation code found for this user (username: {userAccount.Username}" +
+                    $" | pending new email: {userAccount.PendingNewEmail})");
                 return (401, "Invalid or expired confirmation code.");
             }
             if (codeData.Expiration < DateTime.UtcNow)
             {
                 // Remove expired code data, discarding out variable because it is not needed.
-                _confirmationCodes.Remove(userAccount.Username, out _);
+                _confirmationCodes.Remove(userAccount.PendingNewEmail, out _);
 
-                _logger.LogInformation($"Verify new email failed: expired user-provided confirmation code (username: {userAccount.Username})");
+                _logger.LogInformation($"Verify new email failed: expired user-provided confirmation code (username: {userAccount.Username})" +
+                    $" | pending new email: {userAccount.PendingNewEmail})");
                 return (401, "Invalid or expired confirmation code.");
             }
 
@@ -705,7 +707,7 @@ namespace RPG_Login_API.Services
                 if (codeData.AttemptCounter >= 3)
                 {
                     // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(userAccount.Username, out _);
+                    _confirmationCodes.Remove(userAccount.PendingNewEmail, out _);
                 }
 
                 _logger.LogInformation($"Verify new email failed: incorrect confirmation code submitted by user (username: {userAccount.Username})");
@@ -719,7 +721,8 @@ namespace RPG_Login_API.Services
                 return (500, "An unexpected error occurred during new email verification, please try again.");
             }
 
-            // SUCCESS: REPLACE EMAIL WITH NEW, VERIFIED EMAIL | Update email fields and last email changed time.
+            // SUCCESS: REPLACE EMAIL WITH NEW, VERIFIED EMAIL | Consume confirmation code, then update email fields and last email changed time.
+            _confirmationCodes.Remove(userAccount.PendingNewEmail, out _);
             userAccount.Email = userAccount.PendingNewEmail;
             userAccount.PendingNewEmail = string.Empty;
             userAccount.LastEmailChangedTime = DateTime.UtcNow;
