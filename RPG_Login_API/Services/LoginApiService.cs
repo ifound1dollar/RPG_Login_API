@@ -668,7 +668,7 @@ namespace RPG_Login_API.Services
             // SEND CONFIRMATION CODE TO NEW EMAIL
             GenerateAndSendConfirmationCode(newEmail);
 
-            _logger.LogInformation($"User submit new email successful (username: {username} | existing email: {userAccount.Email} | new email: {newEmail})");
+            _logger.LogInformation($"User submit new email successful (username: {username} | current email: {userAccount.Email} | new email: {newEmail})");
             return (200, "Submit new email successful.");
         }
 
@@ -722,6 +722,7 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: REPLACE EMAIL WITH NEW, VERIFIED EMAIL | Consume confirmation code, then update email fields and last email changed time.
+            string oldEmail = userAccount.Email;
             _confirmationCodes.Remove(userAccount.PendingNewEmail, out _);
             userAccount.Email = userAccount.PendingNewEmail;
             userAccount.PendingNewEmail = string.Empty;
@@ -732,7 +733,7 @@ namespace RPG_Login_API.Services
             userAccount.RefreshTokenHash = string.Empty;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-            _logger.LogInformation($"User verify new email successful (username: {username})");
+            _logger.LogInformation($"User verify new email successful (username: {username} | previous email: {oldEmail} | new email: {userAccount.Email})");
             return (200, "Verify new email successful.");
         }
 
