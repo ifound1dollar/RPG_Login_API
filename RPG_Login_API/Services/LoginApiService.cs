@@ -519,6 +519,23 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.", null);
             }
 
+            // VERIFY THAT USERNAME IS NOT ALREADY IN USE | Deny change if username is already in use by a legitimate account.
+            var existingAccount = await _databaseService.GetOneByUsernameAsync(newUsername);
+            if (existingAccount != null)
+            {
+                // If username is in use but account email was never verified and was created >30 days ago, delete it (zombie).
+                if (!userAccount.IsEmailVerified && DateTime.UtcNow - userAccount.AccountCreatedTime > TimeSpan.FromDays(30))
+                {
+                    await _databaseService.DeleteOneByUsernameAsync(userAccount.Username);
+                }
+                // Else username is actually in use, so return failure.
+                else
+                {
+                    _logger.LogInformation($"Username change failed: username already in use (username: {newUsername})");
+                    return (409, "Username already in use, please try a different username.", null);
+                }
+            }
+
             // ENSURE USER IS ALLOWED TO CHANGE USERNAME | Deny change if username was changed less than 30 days ago.
             if (DateTime.UtcNow - userAccount.LastUsernameChangedTime < TimeSpan.FromDays(30))
             {
@@ -626,6 +643,24 @@ namespace RPG_Login_API.Services
                 return (409, "New email cannot be the same as old email.");
             }
 
+            // VERIFY THAT EMAIL IS NOT ALREADY IN USE | Deny change with GENERIC ERROR MESSAGE if email is in use by another account.
+            var existingAccount = await _databaseService.GetOneByEmailAsync(newEmail);
+            if (existingAccount != null)
+            {
+                // If email is in use but account email was never verified and was created >30 days ago, delete it (zombie).
+                if (!userAccount.IsEmailVerified && DateTime.UtcNow - userAccount.AccountCreatedTime > TimeSpan.FromDays(30))
+                {
+                    await _databaseService.DeleteOneByEmailAsync(userAccount.Email);
+                }
+                else
+                {
+                    // Return a GENERIC error message.
+                    _logger.LogInformation($"Submit new email failed: email already in use (username: {username}" +
+                        $" | existing email: {userAccount.Email} | new email: {newEmail})");
+                    return (500, "An unexpected error occured during new email submission, please try again.");
+                }
+            }
+
             // SUCCESS: ADD PENDING NEW EMAIL TO DOCUMENT | Update pending new email field, but do NOT set last changed time or logout yet.
             userAccount.PendingNewEmail = newEmail;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
@@ -675,6 +710,13 @@ namespace RPG_Login_API.Services
 
                 _logger.LogInformation($"Verify new email failed: incorrect confirmation code submitted by user (username: {userAccount.Username})");
                 return (401, "Invalid or expired confirmation code.");
+            }
+
+            // JUST IN CASE, BLOCK FURTHER LOGIC IF SOMEHOW THIS ENDPOINT IS CALLED WITHOUT A VALID PENDING NEW EMAIL
+            if (userAccount.PendingNewEmail == string.Empty)
+            {
+                _logger.LogInformation($"Verify new email failed: user tried to verify nonexistent pending new email (username: {userAccount.Username})");
+                return (500, "An unexpected error occurred during new email verification, please try again.");
             }
 
             // SUCCESS: REPLACE EMAIL WITH NEW, VERIFIED EMAIL | Update email fields and last email changed time.
