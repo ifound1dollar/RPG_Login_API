@@ -9,7 +9,7 @@ namespace RPG_Login_API.Services.Interfaces
     public interface ITokenService
     {
         public string GenerateRefreshToken(string username, double durationDays = 30);
-        public string GenerateAccessToken(string username, int stateCode, double durationMinutes = 15);
+        public string GenerateAccessToken(string username, string role, double durationMinutes = 15);
 
         public bool TryReadUsernameFromTokenString(string tokenString, [NotNullWhen(true)] out string? username);
         public bool ValidateToken(string token, string guid = "");

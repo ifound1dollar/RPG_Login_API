@@ -22,6 +22,9 @@ namespace RPG_Login_API.Models.MongoDB
         [BsonElement("email")]
         public string Email { get; set; } = string.Empty;
 
+        [BsonElement("pending_new_email")]
+        public string PendingNewEmail { get; set; } = string.Empty;
+
         [BsonElement("password_hash")]
         public string PasswordHash { get; set; } = string.Empty;
 
@@ -30,6 +33,12 @@ namespace RPG_Login_API.Models.MongoDB
 
         [BsonElement("does_password_need_reset")]
         public bool DoesPasswordNeedReset { get; set; } = false;
+
+        [BsonElement("active_mfa_key")]
+        public string ActiveMfaKey { get; set; } = string.Empty;
+
+        [BsonElement("pending_mfa_key")]
+        public string PendingMfaKey { get; set; } = string.Empty;
 
         [BsonElement("refresh_token")]
         public string RefreshTokenHash { get; set; } = string.Empty;
@@ -58,6 +67,9 @@ namespace RPG_Login_API.Models.MongoDB
 
         [BsonElement("last_username_changed_time")]
         public DateTime LastUsernameChangedTime { get; set; } = DateTime.MinValue;
+
+        [BsonElement("last_email_changed_time")]
+        public DateTime LastEmailChangedTime { get; set; } = DateTime.MinValue;
 
 
 

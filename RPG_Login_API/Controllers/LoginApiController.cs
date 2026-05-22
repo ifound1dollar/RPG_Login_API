@@ -16,7 +16,7 @@ using System.Text.RegularExpressions;
 
 namespace RPG_Login_API.Controllers
 {
-    // PERMISSION ROLES CURRENTLY USED ARE: "not_confirmed", "reset_password", "full_access"
+    // PERMISSION ROLES CURRENTLY USED ARE: "email_not_verified", "mfa_not_enabled", "reset_password", "change_email", "awaiting_mfa", "full_access"
 
     [EnableRateLimiting("IpLimitPolicy")]   // Limit requests from any specific IP.
     [Authorize]         // Denotes that all requests BY DEFAULT require JWT token authentication (passed in the HTTP request).
@@ -241,7 +241,7 @@ namespace RPG_Login_API.Controllers
 
 
         [Authorize(Roles = TokenService.Roles.ResetPassword)]       // Only allow endpoint access for reset_password token roles.
-        [Route("users/reset-password")]
+        [Route("users/submit-new-password")]
         [HttpPost]
         public async Task<ActionResult> UserResetPasswordAsync([FromBody] PasswordResetRequestModel request)
         {
@@ -268,9 +268,11 @@ namespace RPG_Login_API.Controllers
                 return UnprocessableEntity("Password does not meet minimum security standards, please submit a more secure password.");
             }
 
-            (int code, string message) = await _service.UserResetPasswordAsync(username, request.NewPassword);
+            (int code, string message) = await _service.UserSubmitNewPasswordAsync(username, request.NewPassword);
             return StatusCode(code, message);
         }
+
+
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow username change if user has full access.
         [Route("users/change-username")]
@@ -311,7 +313,66 @@ namespace RPG_Login_API.Controllers
         }
 
 
-        // NOTE: LEGITIMATE ENDPOINTS WILL ONLY ALLOW ACCESS VIA THE full_access ROLE; OTHER ROLES WILL NOT BE ALLOWED
+
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow email change if user has full access.
+        [Route("users/request-email-change")]
+        [HttpPost]
+        public async Task<ActionResult> UserRequestEmailChangeAsync(RequestEmailChangeRequestModel request)
+        {
+            // Retrieve account username and GUID from token.
+            if (!TryReadUsernameAndGuidFromAccessToken(User, out var username, out var guid))
+            {
+                _logger.LogInformation("Client request email change failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, string message, EmailChangeTokenResponseModel? response) = await _service.UserRequestEmailChangeAsync(username, request.Code);
+            if (response != null)
+            {
+                return StatusCode(code, response);
+            }
+            else
+            {
+                return StatusCode(code, message);
+            }
+        }
+
+
+
+        [Authorize(Roles = TokenService.Roles.ChangeEmail)]
+        [Route("users/submit-new-email")]
+        [HttpPost]
+        public async Task<ActionResult> UserSubmitNewEmailAsync(SubmitNewEmailRequestModel request)
+        {
+            // Retrieve account username and GUID from token.
+            if (!TryReadUsernameAndGuidFromAccessToken(User, out var username, out var guid))
+            {
+                _logger.LogInformation("Client submit new email failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, string message) = await _service.UserSubmitNewEmailAsync(username, request.NewEmail);
+            return StatusCode(code, message);
+        }
+
+
+
+        [Authorize(Roles = TokenService.Roles.ChangeEmail)]
+        [Route("users/verify-new-email")]
+        [HttpPost]
+        public async Task<ActionResult> UserVerifyNewEmailAsync(VerifyNewEmailRequestModel request)
+        {
+            // Retrieve account username and GUID from token.
+            if (!TryReadUsernameAndGuidFromAccessToken(User, out var username, out var guid))
+            {
+                _logger.LogInformation("Client verify new email failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, string message) = await _service.UserVerifyNewEmailAsync(username, request.Code);
+            return StatusCode(code, message);
+        }
+
 
         #endregion
 

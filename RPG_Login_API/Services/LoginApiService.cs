@@ -95,19 +95,20 @@ namespace RPG_Login_API.Services
             if (!userAccount.IsEmailVerified || userAccount.DoesPasswordNeedReset)
             {
                 // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
-                int statusCode = (!userAccount.IsEmailVerified) ? 1 : 2;   // 1 if unconfirmed, else 2 for password reset
+                int statusCode = (!userAccount.IsEmailVerified) ? 1 : 2;                    // 1 if unconfirmed, else 2 for password reset
+                string role = (!userAccount.IsEmailVerified) ? TokenService.Roles.EmailNotVerified : TokenService.Roles.ResetPassword;
                 response = new LoginResponseModel()
                 {
                     Username = userAccount.Username,
                     Email = userAccount.Email,
                     LoginStatusCode = statusCode,
                     RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(username, statusCode, durationMinutes: 15),
+                    AccessToken = _tokenService.GenerateAccessToken(username, role, durationMinutes: 15),
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
 
                 // Unconfirmed or reset required will need a new confirmation code.
-                GenerateAndSendConfirmationCode(userAccount.Username);
+                GenerateAndSendConfirmationCode(userAccount.Email);
             }
             else
             {
@@ -118,7 +119,7 @@ namespace RPG_Login_API.Services
                     Email = userAccount.Email,
                     LoginStatusCode = 0,
                     RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(username, 0, durationMinutes: 15),
+                    AccessToken = _tokenService.GenerateAccessToken(username, TokenService.Roles.FullAccess, durationMinutes: 15),
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
                 userAccount.InLauncherStatus = true;
@@ -184,19 +185,20 @@ namespace RPG_Login_API.Services
             if (!userAccount.IsEmailVerified || userAccount.DoesPasswordNeedReset)
             {
                 // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
-                int statusCode = (!userAccount.IsEmailVerified) ? 1 : 2;   // 1 if unconfirmed, else 2 for password reset
+                int statusCode = (!userAccount.IsEmailVerified) ? 1 : 2;                    // 1 if unconfirmed, else 2 for password reset
+                string role = (!userAccount.IsEmailVerified) ? TokenService.Roles.EmailNotVerified : TokenService.Roles.ResetPassword;
                 response = new LoginResponseModel()
                 {
                     Username = userAccount.Username,
                     Email = userAccount.Email,
                     LoginStatusCode = statusCode,
                     RefreshToken = _tokenService.GenerateRefreshToken(usernameOrEmail, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(usernameOrEmail, statusCode, durationMinutes: 15),
+                    AccessToken = _tokenService.GenerateAccessToken(usernameOrEmail, role, durationMinutes: 15),
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
 
                 // Unconfirmed or reset required will need a new confirmation code.
-                GenerateAndSendConfirmationCode(userAccount.Username);
+                GenerateAndSendConfirmationCode(userAccount.Email);
             }
             else
             {
@@ -207,7 +209,7 @@ namespace RPG_Login_API.Services
                     Email = userAccount.Email,
                     LoginStatusCode = 0,
                     RefreshToken = _tokenService.GenerateRefreshToken(usernameOrEmail, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(usernameOrEmail, 0, durationMinutes: 15),
+                    AccessToken = _tokenService.GenerateAccessToken(usernameOrEmail, TokenService.Roles.FullAccess, durationMinutes: 15),
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
                 userAccount.InLauncherStatus = true;
@@ -258,7 +260,7 @@ namespace RPG_Login_API.Services
 
             // CREATE NEW ACCOUNT MODEL | Username and email are unique (verified in controller), so create a new user document.
             string refreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30);
-            UserAccountModel userAccountModel = new()
+            userAccount = new()
             {
                 Username = username,
                 Email = email,
@@ -269,7 +271,7 @@ namespace RPG_Login_API.Services
                 LastUsernameChangedTime = DateTime.UtcNow,
                 // ObjectId is auto generated, and other values are left default. In launcher status and time remain unset.
             };
-            await _databaseService.InsertOneAsync(userAccountModel);
+            await _databaseService.InsertOneAsync(userAccount);
 
             // GENERATE RESPONSE | Finally, after account creation, generate response and return.
             var response = new LoginResponseModel()
@@ -278,12 +280,12 @@ namespace RPG_Login_API.Services
                 Email = email,
                 LoginStatusCode = 1,        // New accounts must always confirm email (code 1).
                 RefreshToken = refreshToken,
-                AccessToken = _tokenService.GenerateAccessToken(username, 1, durationMinutes: 15),
+                AccessToken = _tokenService.GenerateAccessToken(username, TokenService.Roles.EmailNotVerified, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
 
             // GENERATE EMAIL VERIFICATION CODE | Generate and send email verification code to user's email immediately.
-            GenerateAndSendConfirmationCode(userAccountModel.Username);
+            GenerateAndSendConfirmationCode(userAccount.Email);
 
             _logger.LogInformation($"New user registration successful (username: {username} | email: {email})");
             return (201, "Account registration successful.", response);
@@ -341,7 +343,7 @@ namespace RPG_Login_API.Services
             }
 
             // CREATE CODE AND STORE LOCALLY | Generate a random alphanumeric code and add to container of confirmation codes.
-            GenerateAndSendConfirmationCode(userAccount.Username);
+            GenerateAndSendConfirmationCode(userAccount.Email);
 
             _logger.LogInformation($"User request confirmation code successful (username: {userAccount.Username})");
         }
@@ -382,7 +384,7 @@ namespace RPG_Login_API.Services
                     _confirmationCodes.Remove(username, out _);
                 }
 
-                _logger.LogInformation($"Email verification failed: invalid confirmation code submitted by user (username: {username})");
+                _logger.LogInformation($"Email verification failed: incorrect confirmation code submitted by user (username: {username})");
                 return (401, "Invalid or expired confirmation code.", null);
             }
 
@@ -394,7 +396,7 @@ namespace RPG_Login_API.Services
                 Email = userAccount.Email,
                 LoginStatusCode = 0,        // Always full success status after successful verification.
                 RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
-                AccessToken = _tokenService.GenerateAccessToken(username, 1, durationMinutes: 15),
+                AccessToken = _tokenService.GenerateAccessToken(username, TokenService.Roles.FullAccess, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
 
@@ -452,7 +454,7 @@ namespace RPG_Login_API.Services
                     _confirmationCodes.Remove(userAccount.Username, out _);
                 }
 
-                _logger.LogInformation($"Request password reset failed: invalid confirmation code submitted by user (username: {userAccount.Username})");
+                _logger.LogInformation($"Request password reset failed: incorrect confirmation code submitted by user (username: {userAccount.Username})");
                 return (401, "Invalid or expired confirmation code.", null);
             }
 
@@ -461,14 +463,14 @@ namespace RPG_Login_API.Services
             var response = new PasswordResetTokenResponseModel()
             {
                 Username = userAccount.Username,
-                ResetToken = _tokenService.GenerateAccessToken(userAccount.Username, 2, durationMinutes: 5)
+                PasswordResetToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.ResetPassword, durationMinutes: 5)
             };
 
-            _logger.LogInformation($"User request password reset successful (username/email: {usernameOrEmail})");
+            _logger.LogInformation($"User request password reset successful (username: {userAccount.Username})");
             return (200, "Request password reset successful.", response);
         }
 
-        public async Task<(int, string)> UserResetPasswordAsync(string username, string newPassword)
+        public async Task<(int, string)> UserSubmitNewPasswordAsync(string username, string newPassword)
         {
             // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
@@ -531,7 +533,7 @@ namespace RPG_Login_API.Services
                 Email = userAccount.Email,
                 LoginStatusCode = 0,        // This endpoint can only be accessed by a full-access token, so make full access again.
                 RefreshToken = _tokenService.GenerateRefreshToken(newUsername, durationDays: 30),
-                AccessToken = _tokenService.GenerateAccessToken(newUsername, 0, durationMinutes: 15),
+                AccessToken = _tokenService.GenerateAccessToken(newUsername, TokenService.Roles.FullAccess, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
 
@@ -545,6 +547,148 @@ namespace RPG_Login_API.Services
 
             _logger.LogInformation($"User successfully changed username (old username: {existingUsername} | new username: {newUsername})");
             return (200, "Username change successful", response);
+        }
+
+        public async Task<(int, string, EmailChangeTokenResponseModel?)> UserRequestEmailChangeAsync(string username, string confirmationCode)
+        {
+            // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Request email change failed: user not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.", null);
+            }
+
+            // ENSURE USER IS ALLOWED TO CHANGE EMAIL | Deny change if email was changed less than 30 days ago.
+            if (DateTime.UtcNow - userAccount.LastUsernameChangedTime < TimeSpan.FromDays(30))
+            {
+                _logger.LogInformation($"Submit new email failed: cannot change email less than 30 days since last change (username: {username})");
+                return (493, "Cannot change username within 30 days of previous change.", null);
+            }
+
+            // CHECK FOR AND VALIDATE EXISTING CODE | Try to find stored code in dictionary, returning null if does not exist or expired.
+            if (!_confirmationCodes.TryGetValue(userAccount.Username, out var codeData))
+            {
+                _logger.LogInformation($"Request email change failed: no local confirmation code found for this user (username: {userAccount.Username})");
+                return (401, "Invalid or expired confirmation code.", null);
+            }
+            if (codeData.Expiration < DateTime.UtcNow)
+            {
+                // Remove expired code data, discarding out variable because it is not needed.
+                _confirmationCodes.Remove(userAccount.Username, out _);
+
+                _logger.LogInformation($"Request email change failed: expired user-provided confirmation code (username: {userAccount.Username})");
+                return (401, "Invalid or expired confirmation code.", null);
+            }
+
+            // COMPARE CONFIRMATION CODES | Compare user-provided code with stored code, returning null if mismatch.
+            if (codeData.Code != confirmationCode)
+            {
+                // Increment code counter, which is used to invalidate the code after 3 failed code submit attempts.
+                codeData.AttemptCounter++;
+                if (codeData.AttemptCounter >= 3)
+                {
+                    // If counter now >= 3, invalidate code by removing from local container.
+                    _confirmationCodes.Remove(userAccount.Username, out _);
+                }
+
+                _logger.LogInformation($"Request email failed: incorrect confirmation code submitted by user (username: {userAccount.Username})");
+                return (401, "Invalid or expired confirmation code.", null);
+            }
+
+            // SUCCESS: GENERATE RESPONSE | On successful request, consume confirmation code and generate short-duration email change token.
+            _confirmationCodes.Remove(userAccount.Username, out _);
+            var response = new EmailChangeTokenResponseModel()
+            {
+                Username = userAccount.Username,
+                EmailChangeToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.ChangeEmail, durationMinutes: 5)
+            };
+
+            _logger.LogInformation($"User request email change successful (username: {username})");
+            return (200, "Request email change successful.", response);
+        }
+
+        public async Task<(int, string)> UserSubmitNewEmailAsync(string username, string newEmail)
+        {
+            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Submit new email failed: account for username stored in email change token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // VERIFY NEW EMAIL IS NOT THE SAME AS PREVIOUS
+            if (newEmail == userAccount.Email)
+            {
+                _logger.LogInformation($"Submit new email failed: new email cannot be the same as old email (username: {username}" +
+                    $" | existing email: {userAccount.Email} | new email: {newEmail})");
+                return (409, "New email cannot be the same as old email.");
+            }
+
+            // SUCCESS: ADD PENDING NEW EMAIL TO DOCUMENT | Update pending new email field, but do NOT set last changed time or logout yet.
+            userAccount.PendingNewEmail = newEmail;
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // SEND CONFIRMATION CODE TO NEW EMAIL
+            GenerateAndSendConfirmationCode(newEmail);
+
+            _logger.LogInformation($"User submit new email successful (username: {username} | existing email: {userAccount.Email} | new email: {newEmail})");
+            return (200, "Submit new email successful.");
+        }
+
+        public async Task<(int, string)> UserVerifyNewEmailAsync(string username, string confirmationCode)
+        {
+            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Verify new email failed: account for username stored in email change token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // CHECK FOR AND VALIDATE EXISTING CODE | Try to find stored code in dictionary, returning null if does not exist or expired.
+            if (!_confirmationCodes.TryGetValue(userAccount.Username, out var codeData))
+            {
+                _logger.LogInformation($"Verify new email failed: no local confirmation code found for this user (username: {userAccount.Username})");
+                return (401, "Invalid or expired confirmation code.");
+            }
+            if (codeData.Expiration < DateTime.UtcNow)
+            {
+                // Remove expired code data, discarding out variable because it is not needed.
+                _confirmationCodes.Remove(userAccount.Username, out _);
+
+                _logger.LogInformation($"Verify new email failed: expired user-provided confirmation code (username: {userAccount.Username})");
+                return (401, "Invalid or expired confirmation code.");
+            }
+
+            // COMPARE CONFIRMATION CODES | Compare user-provided code with stored code, returning null if mismatch.
+            if (codeData.Code != confirmationCode)
+            {
+                // Increment code counter, which is used to invalidate the code after 3 failed code submit attempts.
+                codeData.AttemptCounter++;
+                if (codeData.AttemptCounter >= 3)
+                {
+                    // If counter now >= 3, invalidate code by removing from local container.
+                    _confirmationCodes.Remove(userAccount.Username, out _);
+                }
+
+                _logger.LogInformation($"Verify new email failed: incorrect confirmation code submitted by user (username: {userAccount.Username})");
+                return (401, "Invalid or expired confirmation code.");
+            }
+
+            // SUCCESS: REPLACE EMAIL WITH NEW, VERIFIED EMAIL | Update email fields and last email changed time.
+            userAccount.Email = userAccount.PendingNewEmail;
+            userAccount.PendingNewEmail = string.Empty;
+            userAccount.LastEmailChangedTime = DateTime.UtcNow;
+            userAccount.IsEmailVerified = true;                     // Ensure verified just in case.
+
+            // LOG OUT USER AND ACTUALLY UPDATE DATABASE | Invalidate user's refresh token, then update database.
+            userAccount.RefreshTokenHash = string.Empty;
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            _logger.LogInformation($"User verify new email successful (username: {username})");
+            return (200, "Verify new email successful.");
         }
 
         #endregion
@@ -593,11 +737,11 @@ namespace RPG_Login_API.Services
 
         #region Private: Utility
 
-        private void GenerateAndSendConfirmationCode(string username)
+        private void GenerateAndSendConfirmationCode(string targetEmail)
         {
             // TODO: REPLACE TEMPORARY IMPLEMENTATION HERE WITH LEGITIMATE RANDOM CODE AND ACTUALLY SEND TO EMAIL, USING CUSTOM SERVICE
             string code = "00000000";
-            _confirmationCodes[username] = new ConfirmationCodeData(code, durationMinutes: 5);  // Replace if existing.
+            _confirmationCodes[targetEmail] = new ConfirmationCodeData(code, durationMinutes: 5);  // Replace if existing.
             // SEND TO EMAIL
         }
 

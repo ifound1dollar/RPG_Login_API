@@ -20,11 +20,15 @@ namespace RPG_Login_API.Services
     {
         public class Roles
         {
-            public const string EmailNotVerified = "not_verified";
+            public const string EmailNotVerified = "email_not_verified";
+            public const string MfaNotEnabled = "mfa_not_enabled";
             public const string ResetPassword = "reset_password";
+            public const string ChangeEmail = "change_email";
+            public const string AwaitingMfa = "awaiting_mfa";
             public const string FullAccess = "full_access";
 
-            public const string Any = EmailNotVerified + "," + ResetPassword + "," + FullAccess;
+            public const string Any = EmailNotVerified + "," + MfaNotEnabled + "," + ResetPassword + ","
+                + ChangeEmail + "," + AwaitingMfa + "," + FullAccess;
         }
 
         private readonly byte[] _jwtKey;
@@ -70,28 +74,8 @@ namespace RPG_Login_API.Services
             return _handler.WriteToken(token);
         }
 
-        public string GenerateAccessToken(string username, int stateCode, double durationMinutes = 15)
+        public string GenerateAccessToken(string username, string role, double durationMinutes = 15)
         {
-            string role;
-            switch (stateCode)
-            {
-                case 1:
-                    {
-                        role = Roles.EmailNotVerified;
-                        break;
-                    }
-                case 2:
-                    {
-                        role = Roles.ResetPassword;
-                        break;
-                    }
-                default:
-                    {
-                        role = Roles.FullAccess;
-                        break;
-                    }
-            }
-
             var tokenDescriptor = new SecurityTokenDescriptor()
             {
                 Subject = new ClaimsIdentity(
