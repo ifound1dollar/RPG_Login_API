@@ -579,8 +579,11 @@ namespace RPG_Login_API.Services
             // ENSURE USER IS ALLOWED TO CHANGE EMAIL | Deny change if email was changed less than 30 days ago.
             if (DateTime.UtcNow - userAccount.LastEmailChangedTime < TimeSpan.FromDays(30))
             {
+                // Remove any code that may exist because the code's use here has been rejected.
+                _confirmationCodes.Remove(userAccount.Email, out _);
+
                 _logger.LogInformation($"Submit new email failed: cannot change email less than 30 days since last change (username: {username})");
-                return (493, "Cannot change username within 30 days of previous change.", null);
+                return (493, "Cannot change email within 30 days of previous change.", null);
             }
 
             // CHECK FOR AND VALIDATE EXISTING CODE | Try to find stored code in dictionary, returning null if does not exist or expired.
