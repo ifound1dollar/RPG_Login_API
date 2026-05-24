@@ -13,8 +13,20 @@ namespace RPG_Login_API
 {
     public class Program
     {
+        public static bool IsDevelopment { get; } = true;
+
         public static void Main(string[] args)
         {
+            if (IsDevelopment)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine(" <----- API RUNNING IN DEVELOPMENT MODE ----->");
+                Console.WriteLine();
+                Console.ResetColor();
+            }
+
+
+
             var builder = WebApplication.CreateBuilder(args);
 
 
@@ -26,6 +38,9 @@ namespace RPG_Login_API
             var tokenSettings = builder.Configuration.GetSection("TokenSettings");
             builder.Services.Configure<TokenSettings>(tokenSettings);
 
+            // Email SMTP service settings (in secrets.json).
+            builder.Services.Configure<EmailServiceSettings>(builder.Configuration.GetSection("EmailServiceSettings"));
+
             // Configure and add JWT token authentication, passing token settings from config section above.
             ConfigureJwtValidation(builder, tokenSettings);
 
@@ -35,6 +50,7 @@ namespace RPG_Login_API
             // Add our desired services. Registers them to enable constructor injection.
             builder.Services.AddSingleton<IDatabaseService, DatabaseService>();
             builder.Services.AddSingleton<ITokenService, TokenService>();
+            builder.Services.AddSingleton<IEmailCodeService, EmailCodeService>();
             builder.Services.AddSingleton<ILoginApiService, LoginApiService>(); // Token and Database services must be registered before this.
 
             // Add our controller(s). Adds an additional JSON option to remove the special naming policy from serialization

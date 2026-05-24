@@ -21,20 +21,20 @@ namespace RPG_Login_API.Services
     /// </summary>
     public class LoginApiService : ILoginApiService
     {
-        // Stores temporary confirmation codes with expiration, use a concurrent dictionary for async safety.
-        private readonly ConcurrentDictionary<string, ConfirmationCodeData> _confirmationCodes = [];
-
         // Stores an array of failed login attempt timestamps for each user, used for account security purposes.
         private readonly ConcurrentDictionary<string, List<DateTime>> _failedLoginAttempts = [];
 
         private readonly IDatabaseService _databaseService;
         private readonly ITokenService _tokenService;
+        private readonly IEmailCodeService _emailCodeService;
         private readonly ILogger _logger;
 
-        public LoginApiService(IDatabaseService databaseService, ITokenService tokenService, ILogger<LoginApiService> logger)
+        public LoginApiService(IDatabaseService databaseService, ITokenService tokenService, IEmailCodeService emailCodeService,
+            ILogger<LoginApiService> logger)
         {
             _databaseService = databaseService;
             _tokenService = tokenService;
+            _emailCodeService = emailCodeService;
 
             _logger = logger;
         }
@@ -108,7 +108,7 @@ namespace RPG_Login_API.Services
                 };
 
                 // Unconfirmed or reset required will need a new confirmation code.
-                GenerateAndSendConfirmationCode(userAccount.Email);
+                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email);          // Do not await because it can take a while.
             }
             else
             {
@@ -198,7 +198,7 @@ namespace RPG_Login_API.Services
                 };
 
                 // Unconfirmed or reset required will need a new confirmation code.
-                GenerateAndSendConfirmationCode(userAccount.Email);
+                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email);          // Do not await because it can take a while.
             }
             else
             {
@@ -285,7 +285,7 @@ namespace RPG_Login_API.Services
             };
 
             // GENERATE EMAIL VERIFICATION CODE | Generate and send email verification code to user's email immediately.
-            GenerateAndSendConfirmationCode(userAccount.Email);
+            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email);          // Do not await because it can take a while.
 
             _logger.LogInformation($"New user registration successful (username: {username} | email: {email})");
             return (201, "Account registration successful.", response);
@@ -331,21 +331,8 @@ namespace RPG_Login_API.Services
                 }
             }
 
-            // PREVENT NEW CODE SPAM | Ensure there is not an existing confirmation code for this account created less than 60 seconds ago.
-            if (_confirmationCodes.TryGetValue(userAccount.Email, out var codeData))
-            {
-                // If existing code was created less than 60 seconds ago, log error and return.
-                if ((DateTime.UtcNow - codeData.Created) < TimeSpan.FromMinutes(1))
-                {
-                    _logger.LogInformation($"Confirmation code request failed: cannot generate new code within 60 seconds of previous (username/email: {usernameOrEmail})");
-                    return;
-                }
-            }
-
-            // CREATE CODE AND STORE LOCALLY | Generate a random alphanumeric code and add to container of confirmation codes.
-            GenerateAndSendConfirmationCode(userAccount.Email);
-
-            _logger.LogInformation($"User request confirmation code successful (username: {userAccount.Username})");
+            // TRY TO SEND CODE TO EMAIL | Do not await because sending code can take a while.
+            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email);                      // Logs within method.
         }
 
         public async Task<(int, string, LoginResponseModel?)> UserVerifyAccountEmailAsync(string username, string confirmationCode)
@@ -358,38 +345,13 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.", null);
             }
 
-            // CHECK FOR AND VALIDATE EXISTING CODE | Try to find stored code in dictionary, returning null if does not exist or expired.
-            if (!_confirmationCodes.TryGetValue(userAccount.Email, out var codeData))
+            // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode))
             {
-                _logger.LogInformation($"Email verification failed: no local confirmation code found for this user (username: {username})");
-                return (401, "Invalid or expired confirmation code.", null);
-            }
-            if (codeData.Expiration < DateTime.UtcNow)
-            {
-                // Remove expired code data, discarding out variable because it is not needed.
-                _confirmationCodes.Remove(userAccount.Email, out _);
-
-                _logger.LogInformation($"Email verification failed: expired user-provided confirmation code (username: {username})");
-                return (401, "Invalid or expired confirmation code.", null);
-            }
-
-            // COMPARE CONFIRMATION CODES | Compare user-provided code with stored code, returning null if mismatch.
-            if (codeData.Code != confirmationCode)
-            {
-                // Increment code counter, which is used to invalidate the code after 3 failed code submit attempts.
-                codeData.AttemptCounter++;
-                if (codeData.AttemptCounter >= 3)
-                {
-                    // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(userAccount.Email, out _);
-                }
-
-                _logger.LogInformation($"Email verification failed: incorrect confirmation code submitted by user (username: {username})");
                 return (401, "Invalid or expired confirmation code.", null);
             }
 
             // SUCCESS: GENERATE LOGIN RESPONSE | On successful email verification, re-generate both refresh and access token (like login).
-            _confirmationCodes.Remove(userAccount.Email, out _);     // Consume code.
             var response = new LoginResponseModel()
             {
                 Username = userAccount.Username,
@@ -428,38 +390,13 @@ namespace RPG_Login_API.Services
                 }
             }
 
-            // CHECK FOR AND VALIDATE EXISTING CODE | Try to find stored code in dictionary, returning null if does not exist or expired.
-            if (!_confirmationCodes.TryGetValue(userAccount.Email, out var codeData))
+            // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode))
             {
-                _logger.LogInformation($"Request password reset failed: no local confirmation code found for this user (username: {userAccount.Username})");
-                return (401, "Invalid or expired confirmation code.", null);
-            }
-            if (codeData.Expiration < DateTime.UtcNow)
-            {
-                // Remove expired code data, discarding out variable because it is not needed.
-                _confirmationCodes.Remove(userAccount.Email, out _);
-
-                _logger.LogInformation($"Request password reset failed: expired user-provided confirmation code (username: {userAccount.Username})");
-                return (401, "Invalid or expired confirmation code.", null);
-            }
-
-            // COMPARE CONFIRMATION CODES | Compare user-provided code with stored code, returning null if mismatch.
-            if (codeData.Code != confirmationCode)
-            {
-                // Increment code counter, which is used to invalidate the code after 3 failed code submit attempts.
-                codeData.AttemptCounter++;
-                if (codeData.AttemptCounter >= 3)
-                {
-                    // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(userAccount.Email, out _);
-                }
-
-                _logger.LogInformation($"Request password reset failed: incorrect confirmation code submitted by user (username: {userAccount.Username})");
                 return (401, "Invalid or expired confirmation code.", null);
             }
 
             // SUCCESS: GENERATE RESPONSE | On successful request, consume confirmation code and generate short-duration reset token.
-            _confirmationCodes.Remove(userAccount.Email, out _);
             var response = new PasswordResetTokenResponseModel()
             {
                 Username = userAccount.Username,
@@ -576,48 +513,20 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.", null);
             }
 
+            // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode))
+            {
+                return (401, "Invalid or expired confirmation code.", null);
+            }
+
             // ENSURE USER IS ALLOWED TO CHANGE EMAIL | Deny change if email was changed less than 30 days ago.
             if (DateTime.UtcNow - userAccount.LastEmailChangedTime < TimeSpan.FromDays(30))
             {
-                // Remove any code that may exist because the code's use here has been rejected.
-                _confirmationCodes.Remove(userAccount.Email, out _);
-
                 _logger.LogInformation($"Submit new email failed: cannot change email less than 30 days since last change (username: {username})");
                 return (493, "Cannot change email within 30 days of previous change.", null);
             }
 
-            // CHECK FOR AND VALIDATE EXISTING CODE | Try to find stored code in dictionary, returning null if does not exist or expired.
-            if (!_confirmationCodes.TryGetValue(userAccount.Email, out var codeData))
-            {
-                _logger.LogInformation($"Request email change failed: no local confirmation code found for this user (username: {userAccount.Username})");
-                return (401, "Invalid or expired confirmation code.", null);
-            }
-            if (codeData.Expiration < DateTime.UtcNow)
-            {
-                // Remove expired code data, discarding out variable because it is not needed.
-                _confirmationCodes.Remove(userAccount.Email, out _);
-
-                _logger.LogInformation($"Request email change failed: expired user-provided confirmation code (username: {userAccount.Username})");
-                return (401, "Invalid or expired confirmation code.", null);
-            }
-
-            // COMPARE CONFIRMATION CODES | Compare user-provided code with stored code, returning null if mismatch.
-            if (codeData.Code != confirmationCode)
-            {
-                // Increment code counter, which is used to invalidate the code after 3 failed code submit attempts.
-                codeData.AttemptCounter++;
-                if (codeData.AttemptCounter >= 3)
-                {
-                    // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(userAccount.Email, out _);
-                }
-
-                _logger.LogInformation($"Request email failed: incorrect confirmation code submitted by user (username: {userAccount.Username})");
-                return (401, "Invalid or expired confirmation code.", null);
-            }
-
             // SUCCESS: GENERATE RESPONSE | On successful request, consume confirmation code and generate short-duration email change token.
-            _confirmationCodes.Remove(userAccount.Email, out _);
             var response = new EmailChangeTokenResponseModel()
             {
                 Username = userAccount.Username,
@@ -668,8 +577,8 @@ namespace RPG_Login_API.Services
             userAccount.PendingNewEmail = newEmail;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-            // SEND CONFIRMATION CODE TO NEW EMAIL
-            GenerateAndSendConfirmationCode(newEmail);
+            // SEND CONFIRMATION CODE TO NEW EMAIL | Do not await, because sending email can take a while.
+            _ = _emailCodeService.SendCodeToEmailAsync(newEmail);
 
             _logger.LogInformation($"User submit new email successful (username: {username} | current email: {userAccount.Email} | new email: {newEmail})");
             return (200, "Submit new email successful.");
@@ -685,35 +594,9 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.");
             }
 
-            // CHECK FOR AND VALIDATE EXISTING CODE | Search for pending new email, not regular email.
-            if (!_confirmationCodes.TryGetValue(userAccount.PendingNewEmail, out var codeData))
+            // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PendingNewEmail, confirmationCode))
             {
-                _logger.LogInformation($"Verify new email failed: no local confirmation code found for this user (username: {userAccount.Username}" +
-                    $" | pending new email: {userAccount.PendingNewEmail})");
-                return (401, "Invalid or expired confirmation code.");
-            }
-            if (codeData.Expiration < DateTime.UtcNow)
-            {
-                // Remove expired code data, discarding out variable because it is not needed.
-                _confirmationCodes.Remove(userAccount.PendingNewEmail, out _);
-
-                _logger.LogInformation($"Verify new email failed: expired user-provided confirmation code (username: {userAccount.Username})" +
-                    $" | pending new email: {userAccount.PendingNewEmail})");
-                return (401, "Invalid or expired confirmation code.");
-            }
-
-            // COMPARE CONFIRMATION CODES | Compare user-provided code with stored code, returning null if mismatch.
-            if (codeData.Code != confirmationCode)
-            {
-                // Increment code counter, which is used to invalidate the code after 3 failed code submit attempts.
-                codeData.AttemptCounter++;
-                if (codeData.AttemptCounter >= 3)
-                {
-                    // If counter now >= 3, invalidate code by removing from local container.
-                    _confirmationCodes.Remove(userAccount.PendingNewEmail, out _);
-                }
-
-                _logger.LogInformation($"Verify new email failed: incorrect confirmation code submitted by user (username: {userAccount.Username})");
                 return (401, "Invalid or expired confirmation code.");
             }
 
@@ -726,7 +609,6 @@ namespace RPG_Login_API.Services
 
             // SUCCESS: REPLACE EMAIL WITH NEW, VERIFIED EMAIL | Consume confirmation code, then update email fields and last email changed time.
             string oldEmail = userAccount.Email;
-            _confirmationCodes.Remove(userAccount.PendingNewEmail, out _);
             userAccount.Email = userAccount.PendingNewEmail;
             userAccount.PendingNewEmail = string.Empty;
             userAccount.LastEmailChangedTime = DateTime.UtcNow;
@@ -785,14 +667,6 @@ namespace RPG_Login_API.Services
         #endregion
 
         #region Private: Utility
-
-        private void GenerateAndSendConfirmationCode(string targetEmail)
-        {
-            // TODO: REPLACE TEMPORARY IMPLEMENTATION HERE WITH LEGITIMATE RANDOM CODE AND ACTUALLY SEND TO EMAIL, USING CUSTOM SERVICE
-            string code = "00000000";
-            _confirmationCodes[targetEmail] = new ConfirmationCodeData(code, durationMinutes: 5);  // Replace if existing.
-            // SEND TO EMAIL
-        }
 
         /// <summary>
         /// Checks whether the given account has too many failed login attempts within the last five minutes. In
