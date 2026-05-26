@@ -166,7 +166,7 @@ namespace RPG_Login_API.Controllers
 
         [Authorize(Roles = TokenService.Roles.EmailNotVerified + "," + TokenService.Roles.FullAccess)]  // New account verification AND manual email change resend.
         [Route("users/resend-email-verification-code")]
-        [HttpGet]
+        [HttpPost]
         public async Task<ActionResult> UserResendEmailVerificationCodeAsync()
         {
             // Retrieve account data (username, role, guid) from access token in request header.
@@ -191,6 +191,8 @@ namespace RPG_Login_API.Controllers
             }
             return StatusCode(code, message);
         }
+
+
 
         [Authorize(Roles = TokenService.Roles.EmailNotVerified)]    // Only allow endpoint access for accounts not yet verified.
         [Route("users/verify-email")]
@@ -344,7 +346,7 @@ namespace RPG_Login_API.Controllers
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow email change request if full access.
         [Route("users/request-email-change")]
-        [HttpGet]
+        [HttpPost]
         public async Task<ActionResult> UserRequestEmailChangeAsync()
         {
             // This endpoint simply generates a confirmation code for the user stored in the access token.
@@ -429,7 +431,7 @@ namespace RPG_Login_API.Controllers
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only considered in launcher if logged in with full access.
         [Route("users/ping-in-launcher")]
-        [HttpGet]
+        [HttpPost]
         public async Task<ActionResult> UserPingInLauncher()
         {
             // Retrieve account data (username, role, guid) from access token in request header.
@@ -452,7 +454,7 @@ namespace RPG_Login_API.Controllers
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only process exit for fully-logged-in users.
         [Route("users/notify-launcher-exit")]
-        [HttpGet]
+        [HttpPost]
         public async Task<ActionResult> UserNotifyLauncherExit()
         {
             // Retrieve account data (username, role, guid) from access token in request header.
