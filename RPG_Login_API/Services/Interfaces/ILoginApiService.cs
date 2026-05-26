@@ -14,7 +14,7 @@ namespace RPG_Login_API.Services.Interfaces
         public Task<(int, string)> UserLogoutAsync(string username);
 
         public Task<(int, string)> UserResendEmailVerificationCode(string username, bool isForNewAccount);
-        public Task<(int, string, LoginResponseModel?)> UserVerifyAccountEmailAsync(string username, string confirmationCode);
+        public Task<(int, string, LoginResponseModel?)> UserVerifyAccountEmailAsync(string username, string confirmationCode, bool isForNewAccount);
 
         public Task UserForgotPasswordAsync(string usernameOrEmail);
         public Task<(int, string, PasswordResetTokenResponseModel?)> UserInitiatePasswordResetAsync(string usernameOrEmail, string confirmationCode);
@@ -23,7 +23,6 @@ namespace RPG_Login_API.Services.Interfaces
         public Task<(int, string)> UserRequestEmailChangeAsync(string username);
         public Task<(int, string, EmailChangeTokenResponseModel?)> UserInitiateEmailChangeAsync(string username, string confirmationCode);
         public Task<(int, string)> UserSubmitNewEmailAsync(string username, string newEmail);
-        public Task<(int, string)> UserVerifyNewEmailAsync(string username, string confirmationCode);
 
         public Task<(int, string)> UserPingInLauncherAsync(string username);
         public Task<(int, string)> UserNotifyLauncherExitAsync(string username);

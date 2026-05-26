@@ -20,11 +20,11 @@ namespace RPG_Login_API.Controllers
     // PERMISSION ROLES CURRENTLY USED ARE: "email_not_verified", "mfa_not_enabled", "reset_password", "change_email", "awaiting_mfa", "full_access"
 
     [EnableRateLimiting("IpLimitPolicy")]   // Limit requests from any specific IP.
-    [Authorize]         // Denotes that all requests BY DEFAULT require JWT token authentication (passed in the HTTP request).
-                        //  The token passed to the controller must be the access token. Refresh tokens are handled manually.
-    [Route("api")]      // Makes all endpoints begin with "[URL]/api"; endpoint methods below define suffixes.
+    [Authorize]             // Denotes that all requests BY DEFAULT require JWT token authentication (passed in the HTTP request).
+                            //  The token passed to the controller must be the access token. Refresh token is handled manually.
+    [Route("api/users")]    // Makes all endpoints begin with "[URL]/api/users"; endpoint methods below define suffixes.
     [ApiController]
-    public class LoginApiController : Controller
+    public class UsersController : Controller
     {
         // TODO: CONSIDER USING GLOBAL EXCEPTION HANDLING MIDDLEWARE INSTEAD OF TRY-CATCH BLOCKS IN EACH CONTROLLER METHOD
 
@@ -33,7 +33,7 @@ namespace RPG_Login_API.Controllers
 
         private readonly HashSet<string> _bannedPasswords;
 
-        public LoginApiController(ILoginApiService service, ILogger<LoginApiController> logger)
+        public UsersController(ILoginApiService service, ILogger<UsersController> logger)
         {
             // Adding the LoginApiService object as a constructor parameter utilizes ASP.NET's built-in dependency
             //  injection system. The controller is effectively requesting the Service from the services container
@@ -51,57 +51,29 @@ namespace RPG_Login_API.Controllers
         #region Public: User Account Operations
 
         [AllowAnonymous]                // Logging in requires allowing un-authorized users to access endpoint.
-        [Route("users/login-refresh")]
+        [Route("login-refresh")]
         [HttpPost]
         public async Task<ActionResult> UserLoginFromRefreshAsync([FromBody] RefreshLoginRequestModel request)
         {
-            // Validate request body immediately.
-            if (request.RefreshToken == string.Empty)
-            {
-                _logger.LogInformation("Client refresh login failed: missing refresh token in request body");
-                return BadRequest("Missing refresh token in API request.");
-            }
-
             (int code, string message, LoginResponseModel? response) = await _service.UserLoginFromRefreshAsync(request.RefreshToken);
-            if (response != null)
-            {
-                return StatusCode(code, response);
-            }
-            else
-            {
-                return StatusCode(code, message);
-            }
+            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
         }
 
 
 
         [AllowAnonymous]        // Allow un-authorized users to access this endpoint (not logged in = no token yet).
-        [Route("users/login")]  // Appends to route defined in class declaration. Can begin with '/' to override prefix in class declaration.
+        [Route("login")]  // Appends to route defined in class declaration. Can begin with '/' to override prefix in class declaration.
         [HttpPost]
         public async Task<ActionResult> UserLoginAsync([FromBody] LoginRequestModel loginRequest)
         {
-            // Immediately reject any request with empty input fields.
-            if (loginRequest.UsernameOrEmail == string.Empty || loginRequest.Password == string.Empty)
-            {
-                _logger.LogInformation("Client login failed: missing username/email or password fields in request body");
-                return BadRequest("Missing username/email or password in API request.");
-            }
-
             (int code, string message, LoginResponseModel? response) = await _service.UserLoginAsync(loginRequest.UsernameOrEmail, loginRequest.Password);
-            if (response != null)
-            {
-                return StatusCode(code, response);
-            }
-            else
-            {
-                return StatusCode(code, message);
-            }
+            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
         }
 
 
 
         [AllowAnonymous]
-        [Route("users/register")]
+        [Route("register")]
         [HttpPost]
         public async Task<ActionResult> UserRegisterAsync([FromBody] RegisterRequestModel registerRequest)
         {
@@ -134,20 +106,13 @@ namespace RPG_Login_API.Controllers
             }
 
             (int code, string message, LoginResponseModel? response) = await _service.UserRegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
-            if (response != null)
-            {
-                return StatusCode(code, response);
-            }
-            else
-            {
-                return StatusCode(code, message);
-            }
+            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
         }
 
 
 
         [Authorize(Roles = TokenService.Roles.Any)]     // Require access token, any role. Only allow authenticated user to log out.
-        [Route("users/logout")]
+        [Route("logout")]
         [HttpPost]
         public async Task<ActionResult> UserLogoutAsync()
         {
@@ -165,7 +130,7 @@ namespace RPG_Login_API.Controllers
 
 
         [Authorize(Roles = TokenService.Roles.EmailNotVerified + "," + TokenService.Roles.FullAccess)]  // New account verification AND manual email change resend.
-        [Route("users/resend-email-verification-code")]
+        [Route("resend-email-verification-code")]
         [HttpPost]
         public async Task<ActionResult> UserResendEmailVerificationCodeAsync()
         {
@@ -177,8 +142,7 @@ namespace RPG_Login_API.Controllers
             }
 
             // Call service method with context based on stored role.
-            int code;
-            string message;
+            int code; string message;
             if (role == TokenService.Roles.EmailNotVerified)
             {
                 // If email not verified, then is for new account.
@@ -194,8 +158,8 @@ namespace RPG_Login_API.Controllers
 
 
 
-        [Authorize(Roles = TokenService.Roles.EmailNotVerified)]    // Only allow endpoint access for accounts not yet verified.
-        [Route("users/verify-email")]
+        [Authorize(Roles = TokenService.Roles.EmailNotVerified + "," + TokenService.Roles.ChangeEmail)] // New account verification AND manual email change verification.
+        [Route("verify-email")]
         [HttpPost]
         public async Task<ActionResult> UserVerifyAccountEmail([FromBody] VerifyEmailRequestModel request)
         {
@@ -206,31 +170,26 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, string message, LoginResponseModel? response) = await _service.UserVerifyAccountEmailAsync(username, request.Code);
-            if (response != null)
+            // Call service method with context based on stored role.
+            int code; string message; LoginResponseModel? response;
+            if (role == TokenService.Roles.EmailNotVerified)
             {
-                return StatusCode(code, response);
+                (code, message, response) = await _service.UserVerifyAccountEmailAsync(username, request.Code, isForNewAccount: true);
             }
             else
             {
-                return StatusCode(code, message);
+                (code, message, response) = await _service.UserVerifyAccountEmailAsync(username, request.Code, isForNewAccount: false);
             }
+            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
         }
 
 
 
         [AllowAnonymous]            // Anyone can request a confirmation code (necessary to allow forgot password functionality).
-        [Route("users/forgot-password")]
+        [Route("forgot-password")]
         [HttpPost]
         public async Task<ActionResult> UserForgotPasswordAsync([FromBody] ForgotPasswordRequestModel request)
         {
-            // Immediately reject any request with an empty account username/email body.
-            if (request.UsernameOrEmail == string.Empty)
-            {
-                _logger.LogInformation("Client forgot password request failed, empty username/email field in request body");
-                return BadRequest("Missing username/email in API request.");
-            }
-
             // NOTE: We always return 200 (OK) to prevent the confirmation code endpoint from being used as a method
             //  for malicious actors to lookup existing usernames/emails. By always returning 200 (OK), users cannot
             //  know whether an account is associated with the username/email.
@@ -242,7 +201,7 @@ namespace RPG_Login_API.Controllers
 
 
         [AllowAnonymous]        // Allow anonymous to enable forgot password functionality; request must include a confirmation code.
-        [Route("users/initiate-password-reset")]
+        [Route("initiate-password-reset")]
         [HttpPost]
         public async Task<ActionResult> UserInitiatePasswordResetAsync([FromBody] InitiatePasswordResetRequestModel request)
         {
@@ -250,33 +209,17 @@ namespace RPG_Login_API.Controllers
             //  that only valid users can receive this access token by requiring a short-duration one-time-use confirmation code
             //  alongside the passed-in account username or email.
 
-            // Immediately reject any request with an empty account username/email OR missing confirmation code in request body.
-            if (request.UsernameOrEmail == string.Empty || request.Code == string.Empty)
-            {
-                _logger.LogInformation("Client initiate password reset failed, empty username/email or confirmation code field request body");
-                return BadRequest("Missing username/email or confirmation code in API request.");
-            }
-
             (int code, string message, PasswordResetTokenResponseModel? response) = await _service.UserInitiatePasswordResetAsync(request.UsernameOrEmail, request.Code);
-            if (response != null)
-            {
-                return StatusCode(code, response);
-            }
-            else
-            {
-                return StatusCode(code, message);
-            }
+            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
         }
 
 
 
         [Authorize(Roles = TokenService.Roles.ResetPassword)]       // Only allow endpoint access for reset_password token roles.
-        [Route("users/submit-new-password")]
+        [Route("submit-new-password")]
         [HttpPost]
         public async Task<ActionResult> UserResetPasswordAsync([FromBody] PasswordResetRequestModel request)
         {
-            // NOTE: On successful password reset, the user is fully logged-out server side.
-
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
@@ -305,7 +248,7 @@ namespace RPG_Login_API.Controllers
 
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow username change if user has full access.
-        [Route("users/change-username")]
+        [Route("change-username")]
         [HttpPost]
         public async Task<ActionResult> UserChangeUsernameAsync([FromBody] ChangeUsernameRequestModel request)
         {
@@ -314,13 +257,6 @@ namespace RPG_Login_API.Controllers
             {
                 _logger.LogInformation("Client username change failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
-            }
-
-            // Verify new username is not the same as the old username.
-            if (string.Equals(username, request.NewUsername))
-            {
-                _logger.LogInformation("Client username change failed, passed-in new username is the same as existing username");
-                return Conflict("New username cannot be the same as old username.");
             }
 
             // Verify passed-in username matches basic username regex. This is also checked client-side.
@@ -332,20 +268,13 @@ namespace RPG_Login_API.Controllers
             }
 
             (int code, string message, LoginResponseModel? response) = await _service.UserChangeUsernameAsync(username, request.NewUsername);
-            if (response != null)
-            {
-                return StatusCode(code, response);
-            }
-            else
-            {
-                return StatusCode(code, message);
-            }
+            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
         }
 
 
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow email change request if full access.
-        [Route("users/request-email-change")]
+        [Route("request-email-change")]
         [HttpPost]
         public async Task<ActionResult> UserRequestEmailChangeAsync()
         {
@@ -366,7 +295,7 @@ namespace RPG_Login_API.Controllers
 
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow actually initiating email change if full access.
-        [Route("users/initiate-email-change")]
+        [Route("initiate-email-change")]
         [HttpPost]
         public async Task<ActionResult> UserInitiateEmailChangeAsync(InitiateEmailChangeRequestModel request)
         {
@@ -378,20 +307,13 @@ namespace RPG_Login_API.Controllers
             }
 
             (int code, string message, EmailChangeTokenResponseModel? response) = await _service.UserInitiateEmailChangeAsync(username, request.Code);
-            if (response != null)
-            {
-                return StatusCode(code, response);
-            }
-            else
-            {
-                return StatusCode(code, message);
-            }
+            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
         }
 
 
 
         [Authorize(Roles = TokenService.Roles.ChangeEmail)]
-        [Route("users/submit-new-email")]
+        [Route("submit-new-email")]
         [HttpPost]
         public async Task<ActionResult> UserSubmitNewEmailAsync(SubmitNewEmailRequestModel request)
         {
@@ -406,31 +328,12 @@ namespace RPG_Login_API.Controllers
             return StatusCode(code, message);
         }
 
-
-
-        [Authorize(Roles = TokenService.Roles.ChangeEmail)]
-        [Route("users/verify-new-email")]
-        [HttpPost]
-        public async Task<ActionResult> UserVerifyNewEmailAsync(VerifyNewEmailRequestModel request)
-        {
-            // Retrieve account data (username, role, guid) from access token in request header.
-            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
-            {
-                _logger.LogInformation("Client verify new email failed, incorrectly formatted access token in request header");
-                return BadRequest("Malformed access token in API request.");
-            }
-
-            (int code, string message) = await _service.UserVerifyNewEmailAsync(username, request.Code);
-            return StatusCode(code, message);
-        }
-
-
         #endregion
 
         #region Public: Client account state tracking
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only considered in launcher if logged in with full access.
-        [Route("users/ping-in-launcher")]
+        [Route("ping-in-launcher")]
         [HttpPost]
         public async Task<ActionResult> UserPingInLauncher()
         {
@@ -453,7 +356,7 @@ namespace RPG_Login_API.Controllers
         }
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only process exit for fully-logged-in users.
-        [Route("users/notify-launcher-exit")]
+        [Route("notify-launcher-exit")]
         [HttpPost]
         public async Task<ActionResult> UserNotifyLauncherExit()
         {
@@ -473,24 +376,6 @@ namespace RPG_Login_API.Controllers
             {
                 return StatusCode(code, message);
             }
-        }
-
-        #endregion
-
-        #region Public: Admin Account Access
-
-        // These methods should use the '/api/admin/_' endpoint structure.
-
-        #endregion
-
-        #region Public: Ping (async)
-
-        [AllowAnonymous]
-        [Route("ping")]
-        [HttpGet]
-        public async Task<ActionResult> Ping()
-        {
-            return Ok();
         }
 
         #endregion

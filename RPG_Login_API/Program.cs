@@ -1,5 +1,6 @@
 
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.IdentityModel.Tokens;
 using RPG_Login_API.Configuration;
 using RPG_Login_API.Services;
@@ -111,6 +112,8 @@ namespace RPG_Login_API
 
             app.UseAuthorization();
 
+            // Map a basic ping method to check whether API is online, then map our actual controllers.
+            app.MapGet("/api/ping", () => { return Results.Ok(); } );
             app.MapControllers();
 
             app.Run();

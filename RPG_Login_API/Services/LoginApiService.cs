@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
+using Org.BouncyCastle.Asn1.Ocsp;
 using RPG_Login_API.Configuration;
 using RPG_Login_API.Data;
 using RPG_Login_API.Models.MongoDB;
@@ -332,7 +333,7 @@ namespace RPG_Login_API.Services
             return (code, message);
         }
 
-        public async Task<(int, string, LoginResponseModel?)> UserVerifyAccountEmailAsync(string username, string confirmationCode)
+        public async Task<(int, string, LoginResponseModel?)> UserVerifyAccountEmailAsync(string username, string confirmationCode, bool isForNewAccount)
         {
             // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
@@ -343,7 +344,8 @@ namespace RPG_Login_API.Services
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode, ConfirmationCodeData.CodeContext.EmailVerification))
+            string targetEmail = (isForNewAccount) ? userAccount.Email : userAccount.PendingNewEmail;
+            if (!_emailCodeService.ValidateSubmittedCode(targetEmail, confirmationCode, ConfirmationCodeData.CodeContext.EmailVerification))
             {
                 return (401, "Invalid or expired confirmation code.", null);
             }
@@ -352,22 +354,25 @@ namespace RPG_Login_API.Services
             var response = new LoginResponseModel()
             {
                 Username = userAccount.Username,
-                Email = userAccount.Email,
+                Email = targetEmail,
                 LoginStatusCode = 0,        // Always full success status after successful verification.
                 RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
                 AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
 
-            // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
-            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
+            // UPDATE DATABASE | After token generation, update account document.
+            userAccount.Email = targetEmail;                    // Target email will be existing email OR pending new email, depending on context.
+            userAccount.PendingNewEmail = string.Empty;         // Clear pending new email upon verification; verified email is now main email.
             userAccount.IsEmailVerified = true;
+            userAccount.LastEmailChangedTime = DateTime.UtcNow; // Consider verification to be 'changed time'.
             userAccount.InLauncherStatus = true;
             userAccount.LastInLauncherTime = DateTime.UtcNow;
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-            _logger.LogInformation($"User email verification successful (username: {username})");
-            return (200, "Email verification successful.", response);
+            _logger.LogInformation($"User email verification successful (username: {username}, verified email: {targetEmail})");
+            return (200, "Account email verification successful.", response);
         }
 
         public async Task UserForgotPasswordAsync(string usernameOrEmail)
@@ -498,6 +503,13 @@ namespace RPG_Login_API.Services
                 return (493, "Cannot change username within 30 days of previous change.", null);
             }
 
+            // VERIFY THAT NEW USERNAME IS NOT SAME AS PREVIOUS
+            if (string.Equals(userAccount.Username, newUsername))
+            {
+                _logger.LogInformation("Username change failed: user-submitted new username is the same as existing account username");
+                return (409, "New username cannot be the same as old username.", null);
+            }
+
             // RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens with new username.
             var response = new LoginResponseModel()
             {
@@ -617,44 +629,6 @@ namespace RPG_Login_API.Services
 
             _logger.LogInformation($"User submit new email successful (username: {username} | current email: {userAccount.Email} | new email: {newEmail})");
             return (200, "Submit new email successful.");
-        }
-
-        public async Task<(int, string)> UserVerifyNewEmailAsync(string username, string confirmationCode)
-        {
-            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
-            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
-            if (userAccount == null)
-            {
-                _logger.LogInformation($"Verify new email failed: account for username stored in email change token not found in database (username: {username})");
-                return (404, "Failed to find user account for the provided username.");
-            }
-
-            // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PendingNewEmail, confirmationCode, ConfirmationCodeData.CodeContext.EmailVerification))
-            {
-                return (401, "Invalid or expired confirmation code.");
-            }
-
-            // JUST IN CASE, BLOCK FURTHER LOGIC IF SOMEHOW THIS ENDPOINT IS CALLED WITHOUT A VALID PENDING NEW EMAIL
-            if (userAccount.PendingNewEmail == string.Empty)
-            {
-                _logger.LogInformation($"Verify new email failed: user tried to verify nonexistent pending new email (username: {userAccount.Username})");
-                return (500, "An unexpected error occurred during new email verification, please try again.");
-            }
-
-            // SUCCESS: REPLACE EMAIL WITH NEW, VERIFIED EMAIL | Consume confirmation code, then update email fields and last email changed time.
-            string oldEmail = userAccount.Email;
-            userAccount.Email = userAccount.PendingNewEmail;
-            userAccount.PendingNewEmail = string.Empty;
-            userAccount.LastEmailChangedTime = DateTime.UtcNow;
-            userAccount.IsEmailVerified = true;                     // Ensure verified just in case.
-
-            // LOG OUT USER AND ACTUALLY UPDATE DATABASE | Invalidate user's refresh token, then update database.
-            userAccount.RefreshTokenHash = string.Empty;
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
-
-            _logger.LogInformation($"User verify new email successful (username: {username} | previous email: {oldEmail} | new email: {userAccount.Email})");
-            return (200, "Verify new email successful.");
         }
 
         #endregion
