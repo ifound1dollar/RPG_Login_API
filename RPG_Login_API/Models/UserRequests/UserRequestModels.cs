@@ -27,7 +27,7 @@
 
     // CONFIRMATION CODE AND EMAIL VERIFICATION
 
-    public class SendConfirmationCodeRequestModel
+    public class ForgotPasswordRequestModel
     {
         public string UsernameOrEmail { get; set; } = string.Empty;
     }
@@ -43,7 +43,7 @@
 
     // CHANGE PASSWORD / USERNAME / EMAIL
 
-    public class RequestPasswordResetRequestModel
+    public class InitiatePasswordResetRequestModel
     {
         public string UsernameOrEmail { get; set; } = string.Empty;
         public string Code { get; set; } = string.Empty;
@@ -59,7 +59,7 @@
         public string NewUsername { get; set; } = string.Empty;
     }
 
-    public class RequestEmailChangeRequestModel
+    public class InitiateEmailChangeRequestModel
     {
         public string Code { get; set; } = string.Empty;
     }

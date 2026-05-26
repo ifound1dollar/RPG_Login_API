@@ -107,8 +107,8 @@ namespace RPG_Login_API.Services
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
 
-                // Unconfirmed or reset required will need a new confirmation code.
-                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email);          // Do not await because it can take a while.
+                // Unconfirmed or reset required will need a new confirmation code. Do not await send because it can take a while.
+                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
             }
             else
             {
@@ -197,8 +197,8 @@ namespace RPG_Login_API.Services
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
 
-                // Unconfirmed or reset required will need a new confirmation code.
-                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email);          // Do not await because it can take a while.
+                // Unconfirmed or reset required will need a new confirmation code. Do not await send because it can take a while.
+                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
             }
             else
             {
@@ -284,8 +284,8 @@ namespace RPG_Login_API.Services
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
 
-            // GENERATE EMAIL VERIFICATION CODE | Generate and send email verification code to user's email immediately.
-            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email);          // Do not await because it can take a while.
+            // GENERATE EMAIL VERIFICATION CODE | Generate and send email verification code to user's email immediately. Do not await.
+            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
 
             _logger.LogInformation($"New user registration successful (username: {username} | email: {email})");
             return (201, "Account registration successful.", response);
@@ -314,27 +314,6 @@ namespace RPG_Login_API.Services
             return (200, "Logout successful.");
         }
 
-        public async Task UserSendConfirmationCodeAsync(string usernameOrEmail)
-        {
-            // NOTE: We do not return a status code for security reasons (codes can be sent anonymously, and we cannot
-            //  provide information to an unauthorized user whether an account exists and was sent a code successfully).
-
-            // FIND USER | Try to find user in database. Return null if we cannot find by username or email.
-            var userAccount = await _databaseService.GetOneByUsernameAsync(usernameOrEmail);
-            if (userAccount == null)
-            {
-                userAccount = await _databaseService.GetOneByEmailAsync(usernameOrEmail);
-                if (userAccount == null)
-                {
-                    _logger.LogInformation($"Confirmation code request failed: user not found in database (username/email: {usernameOrEmail})");
-                    return;
-                }
-            }
-
-            // TRY TO SEND CODE TO EMAIL | Do not await because sending code can take a while.
-            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email);                      // Logs within method.
-        }
-
         public async Task<(int, string, LoginResponseModel?)> UserVerifyAccountEmailAsync(string username, string confirmationCode)
         {
             // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
@@ -346,7 +325,7 @@ namespace RPG_Login_API.Services
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode))
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode, ConfirmationCodeData.CodeContext.EmailVerification))
             {
                 return (401, "Invalid or expired confirmation code.", null);
             }
@@ -373,7 +352,28 @@ namespace RPG_Login_API.Services
             return (200, "Email verification successful.", response);
         }
 
-        public async Task<(int, string, PasswordResetTokenResponseModel?)> UserRequestPasswordResetAsync(string usernameOrEmail, string confirmationCode)
+        public async Task UserForgotPasswordAsync(string usernameOrEmail)
+        {
+            // NOTE: We do not return a status code for security reasons (codes can be sent anonymously, and we cannot
+            //  provide information to an unauthorized user whether an account exists and was sent a code successfully).
+
+            // FIND USER | Try to find user in database. Return null if we cannot find by username or email.
+            var userAccount = await _databaseService.GetOneByUsernameAsync(usernameOrEmail);
+            if (userAccount == null)
+            {
+                userAccount = await _databaseService.GetOneByEmailAsync(usernameOrEmail);
+                if (userAccount == null)
+                {
+                    _logger.LogInformation($"Forgot password attempt failed: user not found in database (username/email: {usernameOrEmail})");
+                    return;
+                }
+            }
+
+            // TRY TO SEND CODE TO EMAIL | Do not await because sending code can take a while.
+            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.PasswordReset);
+        }
+
+        public async Task<(int, string, PasswordResetTokenResponseModel?)> UserInitiatePasswordResetAsync(string usernameOrEmail, string confirmationCode)
         {
             // NOTE: We return a generic error message because this endpoint allows anonymous calling. We cannot allow
             //  unauthorized users to look up whether an account username/email exists by returning specific information.
@@ -385,13 +385,13 @@ namespace RPG_Login_API.Services
                 userAccount = await _databaseService.GetOneByEmailAsync(usernameOrEmail);
                 if (userAccount == null)
                 {
-                    _logger.LogInformation($"Request password reset failed: user not found in database (username/email: {usernameOrEmail})");
+                    _logger.LogInformation($"Initiate password reset failed: user not found in database (username/email: {usernameOrEmail})");
                     return (401, "Invalid or expired confirmation code.", null);
                 }
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode))
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode, ConfirmationCodeData.CodeContext.PasswordReset))
             {
                 return (401, "Invalid or expired confirmation code.", null);
             }
@@ -403,8 +403,8 @@ namespace RPG_Login_API.Services
                 PasswordResetToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.ResetPassword, durationMinutes: 5)
             };
 
-            _logger.LogInformation($"User request password reset successful (username: {userAccount.Username})");
-            return (200, "Request password reset successful.", response);
+            _logger.LogInformation($"User initiate password reset successful (username: {userAccount.Username})");
+            return (200, "Initiate password reset successful.", response);
         }
 
         public async Task<(int, string)> UserSubmitNewPasswordAsync(string username, string newPassword)
@@ -503,18 +503,33 @@ namespace RPG_Login_API.Services
             return (200, "Username change successful", response);
         }
 
-        public async Task<(int, string, EmailChangeTokenResponseModel?)> UserRequestEmailChangeAsync(string username, string confirmationCode)
+        public async Task<(int, string)> UserRequestEmailChangeAsync(string username)
+        {
+            // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Request email change failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // TRY TO SEND CODE TO EMAIL | Do not await because sending code can take a while.
+            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.ChangeEmail);
+            return (200, "Request email change successful.");
+        }
+
+        public async Task<(int, string, EmailChangeTokenResponseModel?)> UserInitiateEmailChangeAsync(string username, string confirmationCode)
         {
             // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
-                _logger.LogInformation($"Request email change failed: user not found in database (username: {username})");
+                _logger.LogInformation($"Initiate email change failed: user not found in database (username: {username})");
                 return (404, "Failed to find user account for the provided username.", null);
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode))
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode, ConfirmationCodeData.CodeContext.ChangeEmail))
             {
                 return (401, "Invalid or expired confirmation code.", null);
             }
@@ -522,7 +537,7 @@ namespace RPG_Login_API.Services
             // ENSURE USER IS ALLOWED TO CHANGE EMAIL | Deny change if email was changed less than 30 days ago.
             if (DateTime.UtcNow - userAccount.LastEmailChangedTime < TimeSpan.FromDays(30))
             {
-                _logger.LogInformation($"Submit new email failed: cannot change email less than 30 days since last change (username: {username})");
+                _logger.LogInformation($"Initiate email change failed: cannot change email less than 30 days since last change (username: {username})");
                 return (493, "Cannot change email within 30 days of previous change.", null);
             }
 
@@ -533,8 +548,8 @@ namespace RPG_Login_API.Services
                 EmailChangeToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.ChangeEmail, durationMinutes: 5)
             };
 
-            _logger.LogInformation($"User request email change successful (username: {username})");
-            return (200, "Request email change successful.", response);
+            _logger.LogInformation($"User initiate email change successful (username: {username})");
+            return (200, "Initiate email change successful.", response);
         }
 
         public async Task<(int, string)> UserSubmitNewEmailAsync(string username, string newEmail)
@@ -578,7 +593,7 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // SEND CONFIRMATION CODE TO NEW EMAIL | Do not await, because sending email can take a while.
-            _ = _emailCodeService.SendCodeToEmailAsync(newEmail);
+            _ = _emailCodeService.SendCodeToEmailAsync(newEmail, ConfirmationCodeData.CodeContext.EmailVerification);
 
             _logger.LogInformation($"User submit new email successful (username: {username} | current email: {userAccount.Email} | new email: {newEmail})");
             return (200, "Submit new email successful.");
@@ -595,7 +610,7 @@ namespace RPG_Login_API.Services
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PendingNewEmail, confirmationCode))
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PendingNewEmail, confirmationCode, ConfirmationCodeData.CodeContext.EmailVerification))
             {
                 return (401, "Invalid or expired confirmation code.");
             }

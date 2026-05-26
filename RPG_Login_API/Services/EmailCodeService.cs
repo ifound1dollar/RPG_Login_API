@@ -25,7 +25,7 @@ namespace RPG_Login_API.Services
 
 
 
-        public bool ValidateSubmittedCode(string email, string code)
+        public bool ValidateSubmittedCode(string email, string code, ConfirmationCodeData.CodeContext context)
         {
             // First, convert code to all uppercase (non-case-sensitive code and we use uppercase in generation).
             code = code.ToUpperInvariant();
@@ -33,7 +33,7 @@ namespace RPG_Login_API.Services
             // Try to find stored code in dictionary, then if exists, check for expiration.
             if (!_confirmationCodes.TryGetValue(email, out var codeData))
             {
-                _logger.LogInformation($"Email verification failed: no local confirmation code found for this email (email: {email})");
+                _logger.LogInformation($"Confirmation code validation failed: no local confirmation code found for this email (email: {email})");
                 return false;
             }
             if (codeData.Expiration < DateTime.UtcNow)
@@ -41,7 +41,15 @@ namespace RPG_Login_API.Services
                 // Remove expired code data, discarding out variable because it is not needed.
                 _confirmationCodes.Remove(email, out _);
 
-                _logger.LogInformation($"Email verification failed: expired user-provided confirmation code (email: {email})");
+                _logger.LogInformation($"Confirmation code validation failed: expired user-provided confirmation code (email: {email})");
+                return false;
+            }
+
+            // Verify submitted code context (from endpoint) matches stored code (prevents unintended cross-usage).
+            if (codeData.Context != context)
+            {
+                // Simply reject request, interpreting it as an invalid request entirely. Do not increment failed attempt counter.
+                _logger.LogInformation($"Confirmation code validation failed: confirmation code context in request does not match context of stored code (email: {email})");
                 return false;
             }
 
@@ -65,7 +73,7 @@ namespace RPG_Login_API.Services
             return true;
         }
 
-        public async Task SendCodeToEmailAsync(string email)
+        public async Task SendCodeToEmailAsync(string email, ConfirmationCodeData.CodeContext context)
         {
             // PREVENT NEW CODE SPAM | Ensure there is not an existing confirmation code for this account created less than 60 seconds ago.
             if (_confirmationCodes.TryGetValue(email, out var codeData))
@@ -73,19 +81,19 @@ namespace RPG_Login_API.Services
                 // If existing code was created less than 60 seconds ago, log error and return.
                 if ((DateTime.UtcNow - codeData.Created) < TimeSpan.FromMinutes(1))
                 {
-                    _logger.LogInformation($"Failed to send code to email: cannot generate new code within 60 seconds of previous (email: {email})");
+                    _logger.LogInformation($"Failed to send code to email: cannot generate new code within 60 seconds of previous (email: {email}, context: {context.ToString()})");
                     return;
                 }
             }
 
             // Generate code and add to in-memory Dictionary, replacing if an entry already exists.
             string code = Helper.GenerateRandomAlphanumericCode();
-            _confirmationCodes[email] = new ConfirmationCodeData(code, durationMinutes: 5);
+            _confirmationCodes[email] = new ConfirmationCodeData(code, context, durationMinutes: 5);
 
             // If in development mode, print to console so developer can test fake emails, then return.
             if (Program.IsDevelopment)
             {
-                _logger.LogInformation($"CONFIRMATION CODE FOR USER (email: {email}): {code}");
+                _logger.LogInformation($"CONFIRMATION CODE FOR USER (email: {email}, context: {context.ToString()}): {code}");
                 return;
             }
 
@@ -113,7 +121,7 @@ namespace RPG_Login_API.Services
                     await smtp.DisconnectAsync(true);
                 }
 
-                _logger.LogInformation($"Email confirmation code successfully sent (email: {email})");
+                _logger.LogInformation($"Email confirmation code successfully sent (email: {email}, context: {context.ToString()})");
             }
             catch (Exception ex)
             {

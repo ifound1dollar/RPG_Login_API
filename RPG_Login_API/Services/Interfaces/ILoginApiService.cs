@@ -13,13 +13,14 @@ namespace RPG_Login_API.Services.Interfaces
         public Task<(int, string, LoginResponseModel?)> UserRegisterAsync(string username, string email, string password);
         public Task<(int, string)> UserLogoutAsync(string username);
 
-        public Task UserSendConfirmationCodeAsync(string usernameOrEmail);
+        public Task UserForgotPasswordAsync(string usernameOrEmail);
         public Task<(int, string, LoginResponseModel?)> UserVerifyAccountEmailAsync(string username, string confirmationCode);
 
-        public Task<(int, string, PasswordResetTokenResponseModel?)> UserRequestPasswordResetAsync(string usernameOrEmail, string confirmationCode);
+        public Task<(int, string, PasswordResetTokenResponseModel?)> UserInitiatePasswordResetAsync(string usernameOrEmail, string confirmationCode);
         public Task<(int, string)> UserSubmitNewPasswordAsync(string username, string newPassword);
         public Task<(int, string, LoginResponseModel?)> UserChangeUsernameAsync(string existingUsername, string newUsername);
-        public Task<(int, string, EmailChangeTokenResponseModel?)> UserRequestEmailChangeAsync(string username, string confirmationCode);
+        public Task<(int, string)> UserRequestEmailChangeAsync(string username);
+        public Task<(int, string, EmailChangeTokenResponseModel?)> UserInitiateEmailChangeAsync(string username, string confirmationCode);
         public Task<(int, string)> UserSubmitNewEmailAsync(string username, string newEmail);
         public Task<(int, string)> UserVerifyNewEmailAsync(string username, string confirmationCode);
 

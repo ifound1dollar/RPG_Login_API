@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Org.BouncyCastle.Asn1.Ocsp;
 using RPG_Login_API.Models.UserRequests;
 using RPG_Login_API.Models.UserResponses;
 using RPG_Login_API.Services;
@@ -163,28 +164,6 @@ namespace RPG_Login_API.Controllers
 
 
 
-        [AllowAnonymous]            // Anyone can request a confirmation code (necessary to allow forgot password functionality).
-        [Route("users/confirmation-code")]
-        [HttpPost]
-        public async Task<ActionResult> UserSendConfirmationCodeAsync([FromBody] SendConfirmationCodeRequestModel request)
-        {
-            // Immediately reject any request with an empty account username/email body.
-            if (request.UsernameOrEmail == string.Empty)
-            {
-                _logger.LogInformation("Client confirmation code request failed, empty username/email field in request body");
-                return BadRequest("Missing username/email in API request.");
-            }
-
-            // NOTE: We always return 200 (OK) to prevent the confirmation code endpoint from being used as a method
-            //  for malicious actors to lookup existing usernames/emails. By always returning 200 (OK), users cannot
-            //  know whether an account is associated with the username/email.
-
-            await _service.UserSendConfirmationCodeAsync(request.UsernameOrEmail);
-            return Ok();
-        }
-
-
-
         [Authorize(Roles = TokenService.Roles.EmailNotVerified)]    // Only allow endpoint access for accounts not yet verified.
         [Route("users/verify-email")]
         [HttpPost]
@@ -210,24 +189,45 @@ namespace RPG_Login_API.Controllers
 
 
 
-        [AllowAnonymous]        // Allow anonymous to enable forgot password functionality; request must include a confirmation code.
-        [Route("users/request-password-reset")]
+        [AllowAnonymous]            // Anyone can request a confirmation code (necessary to allow forgot password functionality).
+        [Route("users/forgot-password")]
         [HttpPost]
-        public async Task<ActionResult> UserRequestPasswordResetAsync([FromBody] RequestPasswordResetRequestModel request)
+        public async Task<ActionResult> UserForgotPasswordAsync([FromBody] ForgotPasswordRequestModel request)
         {
-            // NOTE: Requesting a password reset returns only an access token with the ResetPassword role. This endpoint ensures 
+            // Immediately reject any request with an empty account username/email body.
+            if (request.UsernameOrEmail == string.Empty)
+            {
+                _logger.LogInformation("Client confirmation code request failed, empty username/email field in request body");
+                return BadRequest("Missing username/email in API request.");
+            }
+
+            // NOTE: We always return 200 (OK) to prevent the confirmation code endpoint from being used as a method
+            //  for malicious actors to lookup existing usernames/emails. By always returning 200 (OK), users cannot
+            //  know whether an account is associated with the username/email.
+
+            await _service.UserForgotPasswordAsync(request.UsernameOrEmail);
+            return Ok();
+        }
+
+
+
+        [AllowAnonymous]        // Allow anonymous to enable forgot password functionality; request must include a confirmation code.
+        [Route("users/initiate-password-reset")]
+        [HttpPost]
+        public async Task<ActionResult> UserInitiatePasswordResetAsync([FromBody] InitiatePasswordResetRequestModel request)
+        {
+            // NOTE: Initiating a password reset returns only an access token with the ResetPassword role. This endpoint ensures 
             //  that only valid users can receive this access token by requiring a short-duration one-time-use confirmation code
             //  alongside the passed-in account username or email.
-            // We are not explicitly using a separate Reset Token because we can just use a very short access token with the reset role.
 
             // Immediately reject any request with an empty account username/email OR missing confirmation code in request body.
             if (request.UsernameOrEmail == string.Empty || request.Code == string.Empty)
             {
-                _logger.LogInformation("Client request password reset failed, empty username/email or confirmation code field request body");
+                _logger.LogInformation("Client initiate password reset failed, empty username/email or confirmation code field request body");
                 return BadRequest("Missing username/email or confirmation code in API request.");
             }
 
-            (int code, string message, PasswordResetTokenResponseModel? response) = await _service.UserRequestPasswordResetAsync(request.UsernameOrEmail, request.Code);
+            (int code, string message, PasswordResetTokenResponseModel? response) = await _service.UserInitiatePasswordResetAsync(request.UsernameOrEmail, request.Code);
             if (response != null)
             {
                 return StatusCode(code, response);
@@ -314,11 +314,14 @@ namespace RPG_Login_API.Controllers
 
 
 
-        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow email change if user has full access.
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow email change request if full access.
         [Route("users/request-email-change")]
         [HttpPost]
-        public async Task<ActionResult> UserRequestEmailChangeAsync(RequestEmailChangeRequestModel request)
+        public async Task<ActionResult> UserRequestEmailChangeAsync()
         {
+            // This endpoint simply generates a confirmation code for the user stored in the access token.
+            // IMPORTANT: Because this is only accessible by fully-logged-in users, we can return actual success code and message.
+
             // Retrieve account username and GUID from token.
             if (!TryReadUsernameAndGuidFromAccessToken(User, out var username, out var guid))
             {
@@ -326,7 +329,25 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, string message, EmailChangeTokenResponseModel? response) = await _service.UserRequestEmailChangeAsync(username, request.Code);
+            (int code, string message) = await _service.UserRequestEmailChangeAsync(username);
+            return StatusCode(code, message);
+        }
+
+
+
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow actually initiating email change if full access.
+        [Route("users/initiate-email-change")]
+        [HttpPost]
+        public async Task<ActionResult> UserInitiateEmailChangeAsync(InitiateEmailChangeRequestModel request)
+        {
+            // Retrieve account username and GUID from token.
+            if (!TryReadUsernameAndGuidFromAccessToken(User, out var username, out var guid))
+            {
+                _logger.LogInformation("Client initiate email change failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, string message, EmailChangeTokenResponseModel? response) = await _service.UserInitiateEmailChangeAsync(username, request.Code);
             if (response != null)
             {
                 return StatusCode(code, response);
