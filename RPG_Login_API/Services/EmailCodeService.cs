@@ -33,7 +33,7 @@ namespace RPG_Login_API.Services
             // Try to find stored code in dictionary, then if exists, check for expiration.
             if (!_confirmationCodes.TryGetValue(email, out var codeData))
             {
-                _logger.LogInformation($"Confirmation code validation failed: no local confirmation code found for this email (email: {email})");
+                _logger.LogInformation($"Confirmation code validation failed: no local confirmation code found for this email (email: {email}, context: {context.ToString()})");
                 return false;
             }
             if (codeData.Expiration < DateTime.UtcNow)
@@ -41,7 +41,7 @@ namespace RPG_Login_API.Services
                 // Remove expired code data, discarding out variable because it is not needed.
                 _confirmationCodes.Remove(email, out _);
 
-                _logger.LogInformation($"Confirmation code validation failed: expired user-provided confirmation code (email: {email})");
+                _logger.LogInformation($"Confirmation code validation failed: expired user-provided confirmation code (email: {email}, context: {context.ToString()})");
                 return false;
             }
 
@@ -49,7 +49,8 @@ namespace RPG_Login_API.Services
             if (codeData.Context != context)
             {
                 // Simply reject request, interpreting it as an invalid request entirely. Do not increment failed attempt counter.
-                _logger.LogInformation($"Confirmation code validation failed: confirmation code context in request does not match context of stored code (email: {email})");
+                _logger.LogInformation($"Confirmation code validation failed: confirmation code context in request does not match context of" +
+                    $" stored code (email: {email}, submitted context: {context.ToString()}, stored context: {codeData.Context.ToString()})");
                 return false;
             }
 
@@ -64,7 +65,7 @@ namespace RPG_Login_API.Services
                     _confirmationCodes.Remove(email, out _);
                 }
 
-                _logger.LogInformation($"Email verification failed: incorrect confirmation code submitted by user (email: {email})");
+                _logger.LogInformation($"Email verification failed: incorrect confirmation code submitted by user (email: {email}, context: {context.ToString()})");
                 return false;
             }
 
