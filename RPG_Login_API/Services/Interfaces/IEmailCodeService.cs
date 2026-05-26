@@ -10,7 +10,7 @@ namespace RPG_Login_API.Services.Interfaces
         /// </summary>
         /// <param name="email"> The email to try to send the confirmation code to. </param>
         /// <param name="context"> The context which the code is for, used to ensure codes are not cross-used. </param>
-        public Task SendCodeToEmailAsync(string email, ConfirmationCodeData.CodeContext context);
+        public Task<(int, string)> SendCodeToEmailAsync(string email, ConfirmationCodeData.CodeContext context);
 
         /// <summary>
         /// Validates a user-submitted email confirmation code, checking its expiration and whether it

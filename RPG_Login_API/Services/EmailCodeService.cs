@@ -73,7 +73,7 @@ namespace RPG_Login_API.Services
             return true;
         }
 
-        public async Task SendCodeToEmailAsync(string email, ConfirmationCodeData.CodeContext context)
+        public async Task<(int, string)> SendCodeToEmailAsync(string email, ConfirmationCodeData.CodeContext context)
         {
             // PREVENT NEW CODE SPAM | Ensure there is not an existing confirmation code for this account created less than 60 seconds ago.
             if (_confirmationCodes.TryGetValue(email, out var codeData))
@@ -82,7 +82,7 @@ namespace RPG_Login_API.Services
                 if ((DateTime.UtcNow - codeData.Created) < TimeSpan.FromMinutes(1))
                 {
                     _logger.LogInformation($"Failed to send code to email: cannot generate new code within 60 seconds of previous (email: {email}, context: {context.ToString()})");
-                    return;
+                    return (403, "Cannot request a new confirmation code within 60 seconds of previous request.");
                 }
             }
 
@@ -94,7 +94,7 @@ namespace RPG_Login_API.Services
             if (Program.IsDevelopment)
             {
                 _logger.LogInformation($"CONFIRMATION CODE FOR USER (email: {email}, context: {context.ToString()}): {code}");
-                return;
+                return (200, "Email confirmation code sent successfully.");
             }
 
             // If not in development mode, use Gmail SMTP to send a code to the user.
@@ -122,10 +122,12 @@ namespace RPG_Login_API.Services
                 }
 
                 _logger.LogInformation($"Email confirmation code successfully sent (email: {email}, context: {context.ToString()})");
+                return (200, "Email confirmation code sent successfully.");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
+                return (500, "An unexpected error occurred during the request, please try again.");
             }
         }
 

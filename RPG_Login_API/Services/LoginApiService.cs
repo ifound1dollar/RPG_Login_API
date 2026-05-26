@@ -314,6 +314,24 @@ namespace RPG_Login_API.Services
             return (200, "Logout successful.");
         }
 
+        public async Task<(int, string)> UserResendEmailVerificationCode(string username, bool isForNewAccount)
+        {
+            // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Resend email verification code failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // RESEND EMAIL VERIFICATION CODE | Generate and send a new code, target email depending on context.
+            string targetEmail = (isForNewAccount) ? userAccount.Email : userAccount.PendingNewEmail;
+            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(targetEmail, ConfirmationCodeData.CodeContext.EmailVerification);
+
+            // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
+            return (code, message);
+        }
+
         public async Task<(int, string, LoginResponseModel?)> UserVerifyAccountEmailAsync(string username, string confirmationCode)
         {
             // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
@@ -513,9 +531,11 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.");
             }
 
-            // TRY TO SEND CODE TO EMAIL | Do not await because sending code can take a while.
-            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.ChangeEmail);
-            return (200, "Request email change successful.");
+            // TRY TO SEND CODE TO EMAIL | Send a confirmation code to the account's existing email.
+            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.ChangeEmail);
+
+            // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
+            return (code, message);
         }
 
         public async Task<(int, string, EmailChangeTokenResponseModel?)> UserInitiateEmailChangeAsync(string username, string confirmationCode)
