@@ -102,8 +102,8 @@ namespace RPG_Login_API.Services
                     Username = userAccount.Username,
                     Email = userAccount.Email,
                     LoginStatusCode = statusCode,
-                    RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(username, role, durationMinutes: 15),
+                    RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                    AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, role, durationMinutes: 15),
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
 
@@ -118,8 +118,8 @@ namespace RPG_Login_API.Services
                     Username = userAccount.Username,
                     Email = userAccount.Email,
                     LoginStatusCode = 0,
-                    RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(username, TokenService.Roles.FullAccess, durationMinutes: 15),
+                    RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                    AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
                 userAccount.InLauncherStatus = true;
@@ -192,8 +192,8 @@ namespace RPG_Login_API.Services
                     Username = userAccount.Username,
                     Email = userAccount.Email,
                     LoginStatusCode = statusCode,
-                    RefreshToken = _tokenService.GenerateRefreshToken(usernameOrEmail, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(usernameOrEmail, role, durationMinutes: 15),
+                    RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                    AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, role, durationMinutes: 15),
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
 
@@ -208,8 +208,8 @@ namespace RPG_Login_API.Services
                     Username = userAccount.Username,
                     Email = userAccount.Email,
                     LoginStatusCode = 0,
-                    RefreshToken = _tokenService.GenerateRefreshToken(usernameOrEmail, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(usernameOrEmail, TokenService.Roles.FullAccess, durationMinutes: 15),
+                    RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                    AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
                     AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
                 };
                 userAccount.InLauncherStatus = true;
@@ -280,7 +280,7 @@ namespace RPG_Login_API.Services
                 Email = email,
                 LoginStatusCode = 1,        // New accounts must always confirm email (code 1).
                 RefreshToken = refreshToken,
-                AccessToken = _tokenService.GenerateAccessToken(username, TokenService.Roles.EmailNotVerified, durationMinutes: 15),
+                AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.EmailNotVerified, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
 
@@ -354,8 +354,8 @@ namespace RPG_Login_API.Services
                 Username = userAccount.Username,
                 Email = userAccount.Email,
                 LoginStatusCode = 0,        // Always full success status after successful verification.
-                RefreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30),
-                AccessToken = _tokenService.GenerateAccessToken(username, TokenService.Roles.FullAccess, durationMinutes: 15),
+                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
 
