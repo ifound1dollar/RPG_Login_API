@@ -24,26 +24,18 @@ namespace RPG_Login_API.Controllers
                             //  The token passed to the controller must be the access token. Refresh token is handled manually.
     [Route("api/users")]    // Makes all endpoints begin with "[URL]/api/users"; endpoint methods below define suffixes.
     [ApiController]
-    public class UsersController : Controller
+    public class UserController : Controller
     {
-        // TODO: CONSIDER USING GLOBAL EXCEPTION HANDLING MIDDLEWARE INSTEAD OF TRY-CATCH BLOCKS IN EACH CONTROLLER METHOD
-
-        private readonly ILoginApiService _service;
+        private readonly IUserService _service;
         private readonly ILogger _logger;
 
-        private readonly HashSet<string> _bannedPasswords;
-
-        public UsersController(ILoginApiService service, ILogger<UsersController> logger)
+        public UserController(IUserService service, ILogger<UserController> logger)
         {
             // Adding the LoginApiService object as a constructor parameter utilizes ASP.NET's built-in dependency
             //  injection system. The controller is effectively requesting the Service from the services container
             //  configured in Program.cs.
             _service = service;
             _logger = logger;
-
-            // Load a list of 100000 most commonly used passwords, used to prevent unsafe passwords.
-            string badPasswordsFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Utility", "100k-most-used-passwords-NCSC.txt");
-            _bannedPasswords = new HashSet<string>(System.IO.File.ReadAllLines(badPasswordsFilePath), StringComparer.Ordinal);
         }
 
 
@@ -55,8 +47,8 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserLoginFromRefreshAsync([FromBody] RefreshLoginRequestModel request)
         {
-            (int code, string message, LoginResponseModel? response) = await _service.UserLoginFromRefreshAsync(request.RefreshToken);
-            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
+            (int code, object? response) = await _service.UserLoginFromRefreshAsync(request.RefreshToken);
+            return StatusCode(code, response);
         }
 
 
@@ -66,8 +58,8 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserLoginAsync([FromBody] LoginRequestModel loginRequest)
         {
-            (int code, string message, LoginResponseModel? response) = await _service.UserLoginAsync(loginRequest.UsernameOrEmail, loginRequest.Password);
-            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
+            (int code, object? response) = await _service.UserLoginAsync(loginRequest.UsernameOrEmail, loginRequest.Password);
+            return StatusCode(code, response);
         }
 
 
@@ -77,36 +69,8 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserRegisterAsync([FromBody] RegisterRequestModel registerRequest)
         {
-            // Verify validity of email, username, and password with simple(?) regex. This is also checked client-side.
-            string emailPattern = @"^[^@\s]+@[^@\s]+\.[^@\s]+$";
-            if (!Regex.IsMatch(registerRequest.Email, emailPattern))
-            {
-                _logger.LogInformation($"Client registration failed, email failed regex check (email: {registerRequest.Email})");
-                return UnprocessableEntity("Invalid email, please enter a valid email.");
-            }
-
-            string usernamePattern = @"^[a-zA-Z0-9_]{5,20}$";                                   // Username, 5-20 chars, upper lower digit underscore
-            if (!Regex.IsMatch(registerRequest.Username, usernamePattern))
-            {
-                _logger.LogInformation($"Client registration failed, username failed regex check (username: {registerRequest.Username})");
-                return UnprocessableEntity("Username must be 5-20 characters and can only include uppercase and lowercase letters, digits, and underscores.");
-            }
-
-            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$";   // Password, 8-64 chars, 1+ upper lower digit special (all specials)
-            if (!Regex.IsMatch(registerRequest.Password, passwordPattern))
-            {
-                _logger.LogInformation($"Client registration failed, password failed regex check (username: {registerRequest.Username})");
-                return UnprocessableEntity("New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.");
-            }
-            // Also ensure password is not found in list of 100000 most-used-passwords (highly insecure).
-            if (_bannedPasswords.Contains(registerRequest.Password))
-            {
-                _logger.LogInformation($"Client registration failed, password found in list of 100000 insecure passwords (username: {registerRequest.Username})");
-                return UnprocessableEntity("Password does not meet minimum security standards, please submit a more secure password.");
-            }
-
-            (int code, string message, LoginResponseModel? response) = await _service.UserRegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
-            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
+            (int code, object? response) = await _service.UserRegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
+            return StatusCode(code, response);
         }
 
 
@@ -123,8 +87,8 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, string message) = await _service.UserLogoutAsync(username);
-            return StatusCode(code, message);
+            (int code, object? response) = await _service.UserLogoutAsync(username);
+            return StatusCode(code, response);
         }
 
 
@@ -141,19 +105,10 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            // Call service method with context based on stored role.
-            int code; string message;
-            if (role == TokenService.Roles.EmailNotVerified)
-            {
-                // If email not verified, then is for new account.
-                (code, message) = await _service.UserResendEmailVerificationCode(username, isForNewAccount: true);
-            }
-            else
-            {
-                // Else full access means is for manual email change, so will send code to pending new email.
-                (code, message) = await _service.UserResendEmailVerificationCode(username, isForNewAccount: false);
-            }
-            return StatusCode(code, message);
+            // Email not verified implies is for new account, else full access is for manual email change.
+            bool isForNewAccount = (role == TokenService.Roles.EmailNotVerified);
+            (int code, object? response) = await _service.UserResendEmailVerificationCode(username, isForNewAccount);
+            return StatusCode(code, response);
         }
 
 
@@ -170,17 +125,10 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            // Call service method with context based on stored role.
-            int code; string message; LoginResponseModel? response;
-            if (role == TokenService.Roles.EmailNotVerified)
-            {
-                (code, message, response) = await _service.UserVerifyAccountEmailAsync(username, request.Code, isForNewAccount: true);
-            }
-            else
-            {
-                (code, message, response) = await _service.UserVerifyAccountEmailAsync(username, request.Code, isForNewAccount: false);
-            }
-            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
+            // Email not verified implies is for new account, else full access is for manual email change.
+            bool isForNewAccount = (role == TokenService.Roles.EmailNotVerified);
+            (int code, object? response) = await _service.UserVerifyAccountEmailAsync(username, request.Code, isForNewAccount);
+            return StatusCode(code, response);
         }
 
 
@@ -209,8 +157,8 @@ namespace RPG_Login_API.Controllers
             //  that only valid users can receive this access token by requiring a short-duration one-time-use confirmation code
             //  alongside the passed-in account username or email.
 
-            (int code, string message, PasswordResetTokenResponseModel? response) = await _service.UserInitiatePasswordResetAsync(request.UsernameOrEmail, request.Code);
-            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
+            (int code, object? response) = await _service.UserInitiatePasswordResetAsync(request.UsernameOrEmail, request.Code);
+            return StatusCode(code, response);
         }
 
 
@@ -227,22 +175,8 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed password reset token in API request.");
             }
 
-            // Verify passed-in password matches basic password regex. This is also checked client-side.
-            string passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$";   // Password, 8-64 chars, 1+ upper lower digit special (all specials)
-            if (!Regex.IsMatch(request.NewPassword, passwordPattern))
-            {
-                _logger.LogInformation($"Client submit new password failed, new password failed regex check (username: {username})");
-                return UnprocessableEntity("New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.");
-            }
-            // Also ensure password is not found in list of 100000 most-used-passwords.
-            if (_bannedPasswords.Contains(request.NewPassword))
-            {
-                _logger.LogInformation($"Client submit new password failed, password found in list of 100000 insecure passwords (username: {username})");
-                return UnprocessableEntity("Password does not meet minimum security standards, please submit a more secure password.");
-            }
-
-            (int code, string message) = await _service.UserSubmitNewPasswordAsync(username, request.NewPassword);
-            return StatusCode(code, message);
+            (int code, object? response) = await _service.UserSubmitNewPasswordAsync(username, request.NewPassword);
+            return StatusCode(code, response);
         }
 
 
@@ -259,16 +193,8 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            // Verify passed-in username matches basic username regex. This is also checked client-side.
-            string usernamePattern = @"^[a-zA-Z0-9_]{5,20}$";                   // Username, 5-20 chars, upper lower digit underscore
-            if (!Regex.IsMatch(request.NewUsername, usernamePattern))
-            {
-                _logger.LogInformation($"Client username change failed, new username failed regex check (username: {username})");
-                return UnprocessableEntity("New username must be 5-20 characters and can only include uppercase and lowercase letters, digits, and underscores.");
-            }
-
-            (int code, string message, LoginResponseModel? response) = await _service.UserChangeUsernameAsync(username, request.NewUsername);
-            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
+            (int code, object? response) = await _service.UserChangeUsernameAsync(username, request.NewUsername);
+            return StatusCode(code, response);
         }
 
 
@@ -288,8 +214,8 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, string message) = await _service.UserRequestEmailChangeAsync(username);
-            return StatusCode(code, message);
+            (int code, object? response) = await _service.UserRequestEmailChangeAsync(username);
+            return StatusCode(code, response);
         }
 
 
@@ -306,8 +232,8 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, string message, EmailChangeTokenResponseModel? response) = await _service.UserInitiateEmailChangeAsync(username, request.Code);
-            return (response != null) ? StatusCode(code, response) : StatusCode(code, message);
+            (int code, object? response) = await _service.UserInitiateEmailChangeAsync(username, request.Code);
+            return StatusCode(code, response);
         }
 
 
@@ -324,8 +250,8 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, string message) = await _service.UserSubmitNewEmailAsync(username, request.NewEmail);
-            return StatusCode(code, message);
+            (int code, object? response) = await _service.UserSubmitNewEmailAsync(username, request.NewEmail);
+            return StatusCode(code, response);
         }
 
         #endregion
@@ -344,15 +270,8 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, string message) = await _service.UserPingInLauncherAsync(username);
-            if (code == 204)
-            {
-                return NoContent();
-            }
-            else
-            {
-                return StatusCode(code, message);
-            }
+            (int code, object? response) = await _service.UserPingInLauncherAsync(username);
+            return (code == 204) ? NoContent() : StatusCode(code, response);
         }
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only process exit for fully-logged-in users.
@@ -367,15 +286,8 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, string message) = await _service.UserNotifyLauncherExitAsync(username);
-            if (code == 204)
-            {
-                return NoContent();
-            }
-            else
-            {
-                return StatusCode(code, message);
-            }
+            (int code, object? response) = await _service.UserNotifyLauncherExitAsync(username);
+            return (code == 204) ? NoContent() : StatusCode(code, response);
         }
 
         #endregion

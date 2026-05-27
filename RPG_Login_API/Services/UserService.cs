@@ -17,10 +17,10 @@ using System.Text.RegularExpressions;
 namespace RPG_Login_API.Services
 {
     /// <summary>
-    /// The LoginApiService is responsible for performing API endpoint logic and is used directly by the
+    /// The UserService is responsible for performing API endpoint logic and is used directly by the
     ///  controller. This class depends on the DatabaseService and the TokenService. Can be scoped or singleton.
     /// </summary>
-    public class LoginApiService : ILoginApiService
+    public class UserService : IUserService
     {
         // Stores an array of failed login attempt timestamps for each user, used for account security purposes.
         private readonly ConcurrentDictionary<string, List<DateTime>> _failedLoginAttempts = [];
@@ -30,14 +30,20 @@ namespace RPG_Login_API.Services
         private readonly IEmailCodeService _emailCodeService;
         private readonly ILogger _logger;
 
-        public LoginApiService(IDatabaseService databaseService, ITokenService tokenService, IEmailCodeService emailCodeService,
-            ILogger<LoginApiService> logger)
+        private readonly HashSet<string> _bannedPasswords;
+
+        public UserService(IDatabaseService databaseService, ITokenService tokenService, IEmailCodeService emailCodeService,
+            ILogger<UserService> logger)
         {
             _databaseService = databaseService;
             _tokenService = tokenService;
             _emailCodeService = emailCodeService;
 
             _logger = logger;
+
+            // Load a list of 100000 most commonly used passwords, used to prevent unsafe passwords.
+            string badPasswordsFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Utility", "100k-most-used-passwords-NCSC.txt");
+            _bannedPasswords = new HashSet<string>(System.IO.File.ReadAllLines(badPasswordsFilePath), StringComparer.Ordinal);
         }
 
 
@@ -46,13 +52,13 @@ namespace RPG_Login_API.Services
 
         #region (Interface) Public: User Account Access API Logic
 
-        public async Task<(int, string, LoginResponseModel?)> UserLoginFromRefreshAsync(string refreshTokenString)
+        public async Task<(int, object?)> UserLoginFromRefreshAsync(string refreshTokenString)
         {
             // PARSE TOKEN | Try to retrieve username and token object from the passed-in token string.
             if (!_tokenService.TryReadUsernameFromTokenString(refreshTokenString, out var username))
             {
                 _logger.LogInformation($"Refresh login failed: malformed (unreadable) refresh token in request");
-                return (400, "Malformed refresh token in refresh login request.", null);
+                return (400, "Malformed refresh token in refresh login request.");
             }
 
             // FIND USER | Try to find user in database. Return null if we cannot find by username.
@@ -60,14 +66,14 @@ namespace RPG_Login_API.Services
             if (userAccount == null)
             {
                 _logger.LogInformation($"Refresh login failed: account for username stored in refresh token not found in database (username: {username})");
-                return (404, "Failed to find user account for the provided username.", null);
+                return (404, "Failed to find user account for the provided username.");
             }
 
             // COMPARE TOKEN | Now that we have found a valid user, compare the stored refresh token with this refresh token.
             if (!HashUtility.CompareRefreshTokenToHash(refreshTokenString, userAccount.RefreshTokenHash))
             {
                 _logger.LogInformation($"Refresh login failed: user-provided token does not match token in database (username: {username})");
-                return (401, "Invalid or expired refresh token.", null);
+                return (401, "Invalid or expired refresh token.");
             }
 
             // ACTUALLY VALIDATE TOKEN | If token matches stored token in database, validate it (checks expiration and client GUID).
@@ -78,7 +84,7 @@ namespace RPG_Login_API.Services
                 await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
                 _logger.LogInformation($"Refresh login failed: token is expired or found mismatched client GUID (username: {username})");
-                return (401, "Invalid or expired refresh token.", null);
+                return (401, "Invalid or expired refresh token.");
             }
 
             // DISALLOW MULTIPLE LOGINS | If account is already logged into launcher, ensure it is not a zombie, then deny login.
@@ -88,7 +94,7 @@ namespace RPG_Login_API.Services
                 //  logged in will have its associated refresh token stored. The device doing the duplicate login attempt
                 //  will remove its refresh token client-side, which is already invalid in the database.
                 _logger.LogInformation($"Refresh login failed: user already logged in on another device");
-                return (403, "Account already logged into launcher on another device, please try again later.", null);
+                return (403, "Account already logged into launcher on another device, please try again later.");
             }
 
             // GENERATE RESPONSE | Finally, token is confirmed fully valid so determine login response based on account state.
@@ -132,10 +138,10 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"User refresh login successful (username: {response.Username}) with login code {response.LoginStatusCode}");
-            return (200, "Refresh login successful.", response);
+            return (200, response);
         }
 
-        public async Task<(int, string, LoginResponseModel?)> UserLoginAsync(string usernameOrEmail, string password)
+        public async Task<(int, object?)> UserLoginAsync(string usernameOrEmail, string password)
         {
             // IMPORTANT: We check for a matching account here but do NOT return until password hash comparison to prevent
             //  timing attacks (performing a password hash comparison regardless of whether the account was found will
@@ -155,7 +161,7 @@ namespace RPG_Login_API.Services
                 HashUtility.DoFakeHashComparison(password);
 
                 _logger.LogInformation($"Login failed: user not found in database (username/email: {usernameOrEmail})");
-                return (401, "Invalid username/email or password, please try again.", null);
+                return (401, "Invalid username/email or password, please try again.");
             }
             if (!HashUtility.ComparePasswordToHash(password, userAccount.PasswordHash))
             {
@@ -163,21 +169,21 @@ namespace RPG_Login_API.Services
                 AppendFailedLoginAttemptToTracker(userAccount.Username);
 
                 _logger.LogInformation($"Login failed: user-provided password does not match account's stored password (username: {userAccount.Username})");
-                return (401, "Invalid username/email or password, please try again.", null);
+                return (401, "Invalid username/email or password, please try again.");
             }
 
             // CHECK IF ACCOUNT LOCKED | Block the successful login if the account is temporarily locked because of failed attempts.
             if (DoesAccountHaveTooManyFailedLoginAttempts(userAccount.Username))
             {
                 _logger.LogInformation($"Login failed: account is temporarily locked because of too many failed login attempts");
-                return (401, "Invalid username/email or password, please try again.", null);
+                return (401, "Invalid username/email or password, please try again.");
             }
 
             // VALID BUT DISALLOW MULTIPLE LOGINS | If account is already logged into launcher, ensure it is not a zombie, then deny login.
             if (userAccount.InLauncherStatus && (DateTime.UtcNow - userAccount.LastInLauncherTime < TimeSpan.FromSeconds(75)))
             {
                 _logger.LogInformation($"Login failed: user already logged in on another device");
-                return (403, "Account already logged into launcher on another device, please try again later.", null);
+                return (403, "Account already logged into launcher on another device, please try again later.");
             }
 
             // SUCCESS: GENERATE RESPONSE | Determine how we will process login based on account state.
@@ -222,46 +228,36 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"User login successful (username: {response.Username}) with login code {response.LoginStatusCode}");
-            return (200, "Login successful.", response);
+            return (200, response);
         }
 
-        public async Task<(int, string, LoginResponseModel?)> UserRegisterAsync(string username, string email, string password)
+        public async Task<(int, object?)> UserRegisterAsync(string username, string email, string password)
         {
             // ENSURE USERNAME AND EMAIL NOT ALREADY IN USE | Query database for any existing account with matching username or email.
-            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
-            if (userAccount != null)
+            bool isAvailable = await IsUsernameAvailableAsync(username);
+            if (!isAvailable)
             {
-                // If username is in use but account email was never verified and was created >30 days ago, delete it (zombie).
-                if (!userAccount.IsEmailVerified && DateTime.UtcNow - userAccount.AccountCreatedTime > TimeSpan.FromDays(30))
-                {
-                    await _databaseService.DeleteOneByUsernameAsync(userAccount.Username);
-                }
-                // Else username is actually in use, so return failure.
-                else
-                {
-                    _logger.LogInformation($"Registration failed: username already in use (username: {username})");
-                    return (409, "Username already in use, please try a different username.", null);
-                }
+                _logger.LogInformation($"Registration failed: username already in use (username: {username})");
+                return (409, "That username is unavailable, please try a different username.");
             }
-            userAccount = await _databaseService.GetOneByEmailAsync(username);
-            if (userAccount != null)
+            isAvailable = await IsEmailAvailableAsync(email);
+            if (!isAvailable)
             {
-                // Same logic as username check above.
-                if (!userAccount.IsEmailVerified && DateTime.UtcNow - userAccount.AccountCreatedTime > TimeSpan.FromDays(30))
-                {
-                    await _databaseService.DeleteOneByEmailAsync(userAccount.Email);
-                }
-                else
-                {
-                    // Return a GENERIC error message.
-                    _logger.LogInformation($"Registration failed: email already in use (email: {email})");
-                    return (500, "An unexpected error occurred during registration, please try again.", null);
-                }
+                // Return a GENERIC error message.
+                _logger.LogInformation($"Registration failed: email already in use (email: {email})");
+                return (500, "An unexpected error occurred during registration, please try again.");
+            }
+
+            // Ensure submitted password is not found in list of 100,000 most-used-passwords.
+            if (_bannedPasswords.Contains(password))
+            {
+                _logger.LogInformation($"Client submit new password failed, password found in list of 100000 insecure passwords (username: {username})");
+                return (422, "Password does not meet minimum security standards, please submit a more secure password.");
             }
 
             // CREATE NEW ACCOUNT MODEL | Username and email are unique (verified in controller), so create a new user document.
             string refreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30);
-            userAccount = new()
+            UserAccountModel userAccount = new()
             {
                 Username = username,
                 Email = email,
@@ -289,10 +285,10 @@ namespace RPG_Login_API.Services
             _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
 
             _logger.LogInformation($"New user registration successful (username: {username} | email: {email})");
-            return (201, "Account registration successful.", response);
+            return (201, response);
         }
 
-        public async Task<(int, string)> UserLogoutAsync(string username)
+        public async Task<(int, object?)> UserLogoutAsync(string username)
         {
             // NOTE: If the user is in-game when they log out, the game application will remain logged in, but they will need
             //  to re-login when they want to launch the game again.
@@ -315,7 +311,7 @@ namespace RPG_Login_API.Services
             return (200, "Logout successful.");
         }
 
-        public async Task<(int, string)> UserResendEmailVerificationCode(string username, bool isForNewAccount)
+        public async Task<(int, object?)> UserResendEmailVerificationCode(string username, bool isForNewAccount)
         {
             // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
@@ -333,21 +329,21 @@ namespace RPG_Login_API.Services
             return (code, message);
         }
 
-        public async Task<(int, string, LoginResponseModel?)> UserVerifyAccountEmailAsync(string username, string confirmationCode, bool isForNewAccount)
+        public async Task<(int, object?)> UserVerifyAccountEmailAsync(string username, string confirmationCode, bool isForNewAccount)
         {
             // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
                 _logger.LogInformation($"Email verification failed: account for username stored in access token not found in database (username: {username})");
-                return (404, "Failed to find user account for the provided username.", null);
+                return (404, "Failed to find user account for the provided username.");
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
             string targetEmail = (isForNewAccount) ? userAccount.Email : userAccount.PendingNewEmail;
             if (!_emailCodeService.ValidateSubmittedCode(targetEmail, confirmationCode, ConfirmationCodeData.CodeContext.EmailVerification))
             {
-                return (401, "Invalid or expired confirmation code.", null);
+                return (401, "Invalid or expired confirmation code.");
             }
 
             // SUCCESS: GENERATE LOGIN RESPONSE | On successful email verification, re-generate both refresh and access token (like login).
@@ -372,7 +368,7 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"User email verification successful (username: {username}, verified email: {targetEmail})");
-            return (200, "Account email verification successful.", response);
+            return (200, response);
         }
 
         public async Task UserForgotPasswordAsync(string usernameOrEmail)
@@ -396,7 +392,7 @@ namespace RPG_Login_API.Services
             _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.PasswordReset);
         }
 
-        public async Task<(int, string, PasswordResetTokenResponseModel?)> UserInitiatePasswordResetAsync(string usernameOrEmail, string confirmationCode)
+        public async Task<(int, object?)> UserInitiatePasswordResetAsync(string usernameOrEmail, string confirmationCode)
         {
             // NOTE: We return a generic error message because this endpoint allows anonymous calling. We cannot allow
             //  unauthorized users to look up whether an account username/email exists by returning specific information.
@@ -409,14 +405,14 @@ namespace RPG_Login_API.Services
                 if (userAccount == null)
                 {
                     _logger.LogInformation($"Initiate password reset failed: user not found in database (username/email: {usernameOrEmail})");
-                    return (401, "Invalid or expired confirmation code.", null);
+                    return (401, "Invalid or expired confirmation code.");
                 }
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
             if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode, ConfirmationCodeData.CodeContext.PasswordReset))
             {
-                return (401, "Invalid or expired confirmation code.", null);
+                return (401, "Invalid or expired confirmation code.");
             }
 
             // SUCCESS: GENERATE RESPONSE | On successful request, consume confirmation code and generate short-duration reset token.
@@ -427,10 +423,10 @@ namespace RPG_Login_API.Services
             };
 
             _logger.LogInformation($"User initiate password reset successful (username: {userAccount.Username})");
-            return (200, "Initiate password reset successful.", response);
+            return (200, response);
         }
 
-        public async Task<(int, string)> UserSubmitNewPasswordAsync(string username, string newPassword)
+        public async Task<(int, object?)> UserSubmitNewPasswordAsync(string username, string newPassword)
         {
             // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
@@ -438,6 +434,13 @@ namespace RPG_Login_API.Services
             {
                 _logger.LogInformation($"Password reset failed: account for username stored in reset token not found in database (username: {username})");
                 return (404, "Failed to find user account for the provided username.");
+            }
+
+            // Ensure submitted password is not found in list of 100,000 most-used-passwords.
+            if (_bannedPasswords.Contains(newPassword))
+            {
+                _logger.LogInformation($"Client submit new password failed, password found in list of 100000 insecure passwords (username: {username})");
+                return (422, "Password does not meet minimum security standards, please submit a more secure password.");
             }
 
             // ENSURE USER IS ALLOWED TO CHANGE PASSWORD | If trying to change less than 24 hours since last change, deny change.
@@ -448,7 +451,7 @@ namespace RPG_Login_API.Services
                 return (493, "Cannot change password within 24 hours of previous change.");
             }
 
-            // VALID USER: VERIFY NEW PASSWORD DOES NOT MATCH PREVIOUS
+            // VERIFY NEW PASSWORD DOES NOT MATCH PREVIOUS
             if (HashUtility.ComparePasswordToHash(newPassword, userAccount.PasswordHash))
             {
                 _logger.LogInformation($"Password reset failed: new password cannot be the same as old password (username: {username})");
@@ -469,45 +472,36 @@ namespace RPG_Login_API.Services
             return (200, "Password reset successful.");
         }
 
-        public async Task<(int, string, LoginResponseModel?)> UserChangeUsernameAsync(string existingUsername, string newUsername)
+        public async Task<(int, object?)> UserChangeUsernameAsync(string existingUsername, string newUsername)
         {
             // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(existingUsername);
             if (userAccount == null)
             {
                 _logger.LogInformation($"Username change failed: account for username stored in access token not found in database (username: {existingUsername})");
-                return (404, "Failed to find user account for the provided username.", null);
+                return (404, "Failed to find user account for the provided username.");
             }
 
             // VERIFY THAT USERNAME IS NOT ALREADY IN USE | Deny change if username is already in use by a legitimate account.
-            var existingAccount = await _databaseService.GetOneByUsernameAsync(newUsername);
-            if (existingAccount != null)
+            bool isUsernameAvailable = await IsUsernameAvailableAsync(newUsername);
+            if (!isUsernameAvailable)
             {
-                // If username is in use but account email was never verified and was created >30 days ago, delete it (zombie).
-                if (!userAccount.IsEmailVerified && DateTime.UtcNow - userAccount.AccountCreatedTime > TimeSpan.FromDays(30))
-                {
-                    await _databaseService.DeleteOneByUsernameAsync(userAccount.Username);
-                }
-                // Else username is actually in use, so return failure.
-                else
-                {
-                    _logger.LogInformation($"Username change failed: username already in use (username: {newUsername})");
-                    return (409, "Username already in use, please try a different username.", null);
-                }
+                _logger.LogInformation($"Username change failed: username already in use (username: {newUsername})");
+                return (409, "Username already in use, please try a different username.");
             }
 
             // ENSURE USER IS ALLOWED TO CHANGE USERNAME | Deny change if username was changed less than 30 days ago.
             if (DateTime.UtcNow - userAccount.LastUsernameChangedTime < TimeSpan.FromDays(30))
             {
                 _logger.LogInformation($"Username change failed: cannot change username less than 30 days since last change (existing username: {existingUsername})");
-                return (493, "Cannot change username within 30 days of previous change.", null);
+                return (493, "Cannot change username within 30 days of previous change.");
             }
 
             // VERIFY THAT NEW USERNAME IS NOT SAME AS PREVIOUS
             if (string.Equals(userAccount.Username, newUsername))
             {
                 _logger.LogInformation("Username change failed: user-submitted new username is the same as existing account username");
-                return (409, "New username cannot be the same as old username.", null);
+                return (409, "New username cannot be the same as old username.");
             }
 
             // RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens with new username.
@@ -530,10 +524,10 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount);     // Query by old username.
 
             _logger.LogInformation($"User successfully changed username (old username: {existingUsername} | new username: {newUsername})");
-            return (200, "Username change successful", response);
+            return (200, response);
         }
 
-        public async Task<(int, string)> UserRequestEmailChangeAsync(string username)
+        public async Task<(int, object?)> UserRequestEmailChangeAsync(string username)
         {
             // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
@@ -550,27 +544,27 @@ namespace RPG_Login_API.Services
             return (code, message);
         }
 
-        public async Task<(int, string, EmailChangeTokenResponseModel?)> UserInitiateEmailChangeAsync(string username, string confirmationCode)
+        public async Task<(int, object?)> UserInitiateEmailChangeAsync(string username, string confirmationCode)
         {
             // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
                 _logger.LogInformation($"Initiate email change failed: user not found in database (username: {username})");
-                return (404, "Failed to find user account for the provided username.", null);
+                return (404, "Failed to find user account for the provided username.");
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
             if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode, ConfirmationCodeData.CodeContext.ChangeEmail))
             {
-                return (401, "Invalid or expired confirmation code.", null);
+                return (401, "Invalid or expired confirmation code.");
             }
 
             // ENSURE USER IS ALLOWED TO CHANGE EMAIL | Deny change if email was changed less than 30 days ago.
             if (DateTime.UtcNow - userAccount.LastEmailChangedTime < TimeSpan.FromDays(30))
             {
                 _logger.LogInformation($"Initiate email change failed: cannot change email less than 30 days since last change (username: {username})");
-                return (493, "Cannot change email within 30 days of previous change.", null);
+                return (493, "Cannot change email within 30 days of previous change.");
             }
 
             // SUCCESS: GENERATE RESPONSE | On successful request, consume confirmation code and generate short-duration email change token.
@@ -581,10 +575,10 @@ namespace RPG_Login_API.Services
             };
 
             _logger.LogInformation($"User initiate email change successful (username: {username})");
-            return (200, "Initiate email change successful.", response);
+            return (200, response);
         }
 
-        public async Task<(int, string)> UserSubmitNewEmailAsync(string username, string newEmail)
+        public async Task<(int, object?)> UserSubmitNewEmailAsync(string username, string newEmail)
         {
             // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
@@ -603,21 +597,12 @@ namespace RPG_Login_API.Services
             }
 
             // VERIFY THAT EMAIL IS NOT ALREADY IN USE | Deny change with GENERIC ERROR MESSAGE if email is in use by another account.
-            var existingAccount = await _databaseService.GetOneByEmailAsync(newEmail);
-            if (existingAccount != null)
+            bool isEmailAvailable = await IsEmailAvailableAsync(newEmail);
+            if (!isEmailAvailable)
             {
-                // If email is in use but account email was never verified and was created >30 days ago, delete it (zombie).
-                if (!userAccount.IsEmailVerified && DateTime.UtcNow - userAccount.AccountCreatedTime > TimeSpan.FromDays(30))
-                {
-                    await _databaseService.DeleteOneByEmailAsync(userAccount.Email);
-                }
-                else
-                {
-                    // Return a GENERIC error message.
-                    _logger.LogInformation($"Submit new email failed: email already in use (username: {username}" +
-                        $" | existing email: {userAccount.Email} | new email: {newEmail})");
-                    return (500, "An unexpected error occured during new email submission, please try again.");
-                }
+                _logger.LogInformation($"Submit new email failed: email already in use (username: {username}" +
+                    $" | existing email: {userAccount.Email} | new email: {newEmail})");
+                return (500, "An unexpected error occured during new email submission, please try again.");
             }
 
             // SUCCESS: ADD PENDING NEW EMAIL TO DOCUMENT | Update pending new email field, but do NOT set last changed time or logout yet.
@@ -635,7 +620,7 @@ namespace RPG_Login_API.Services
 
         #region Public: User account online status tracking
 
-        public async Task<(int, string)> UserPingInLauncherAsync(string username)
+        public async Task<(int, object?)> UserPingInLauncherAsync(string username)
         {
             // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
@@ -654,7 +639,7 @@ namespace RPG_Login_API.Services
             return (204, "");
         }
 
-        public async Task<(int, string)> UserNotifyLauncherExitAsync(string username)
+        public async Task<(int, object?)> UserNotifyLauncherExitAsync(string username)
         {
             // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
@@ -739,6 +724,56 @@ namespace RPG_Login_API.Services
         {
             // Remove the entire dictionary entry on successful login.
             _failedLoginAttempts.Remove(username, out _);
+        }
+
+        /// <summary>
+        /// Checks whether the provided username is available (i.e. not in use by another account). If in use by
+        ///  another account, ensures that account is not a zombie; if the account IS a zombie, deletes it entirely.
+        /// </summary>
+        /// <param name="username"> The username to check the availability of. </param>
+        /// <returns> True if the username is available, false otherwise. </returns>
+        private async Task<bool> IsUsernameAvailableAsync(string username)
+        {
+            var existingAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (existingAccount != null)
+            {
+                // If username is in use but account email was never verified and was created >30 days ago, delete it (zombie).
+                if (!existingAccount.IsEmailVerified && DateTime.UtcNow - existingAccount.AccountCreatedTime > TimeSpan.FromDays(30))
+                {
+                    await _databaseService.DeleteOneByEmailAsync(existingAccount.Email);
+                    return true;                // Deleted zombie, so username IS available.
+                }
+
+                return false;                   // Else was not zombie, so username is NOT available.
+            }
+
+            // Else if existing account is null, then does not exist so is available.
+            return true;
+        }
+
+        /// <summary>
+        /// Checks whether the provided email is available (i.e. not in use by another account). If in use by
+        ///  another account, ensures that account is not a zombie; if the account IS a zombie, deletes it entirely.
+        /// </summary>
+        /// <param name="email"> The email to check the availability of. </param>
+        /// <returns> True if the email is available, false otherwise. </returns>
+        private async Task<bool> IsEmailAvailableAsync(string email)
+        {
+            var existingAccount = await _databaseService.GetOneByEmailAsync(email);
+            if (existingAccount != null)
+            {
+                // If email is in use but account email was never verified and was created >30 days ago, delete it (zombie).
+                if (!existingAccount.IsEmailVerified && DateTime.UtcNow - existingAccount.AccountCreatedTime > TimeSpan.FromDays(30))
+                {
+                    await _databaseService.DeleteOneByEmailAsync(existingAccount.Email);
+                    return true;                // Deleted zombie, so email IS available.
+                }
+
+                return false;                   // Else was not zombie, so email is NOT available.
+            }
+
+            // Else if existing account is null, then does not exist so is available.
+            return true;
         }
 
         #endregion

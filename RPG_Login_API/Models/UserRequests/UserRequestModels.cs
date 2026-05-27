@@ -24,13 +24,13 @@ namespace RPG_Login_API.Models.UserRequests
 
     public class RegisterRequestModel
     {
-        [Required(ErrorMessage = "Username is required.")]
+        [RegularExpression(@"^[a-zA-Z0-9_]{5,20}$", ErrorMessage = "Username must be 5-20 characters and can only include uppercase and lowercase letters, digits, and underscores.")]
         public string Username { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Email is required.")]
+        [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "Email must be a valid email address.")]
         public string Email { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Password is required.")]
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$", ErrorMessage = "Password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.")]
         public string Password { get; set; } = string.Empty;
     }
 
@@ -69,13 +69,13 @@ namespace RPG_Login_API.Models.UserRequests
 
     public class PasswordResetRequestModel
     {
-        [Required(ErrorMessage = "A new password is required.")]
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$", ErrorMessage = "New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.")]
         public string NewPassword { get; set; } = string.Empty;
     }
 
     public class ChangeUsernameRequestModel
     {
-        [Required(ErrorMessage = "A new username is required.")]
+        [RegularExpression(@"^[a-zA-Z0-9_]{5,20}$", ErrorMessage = "Username must be 5-20 characters and can only include uppercase and lowercase letters, digits, and underscores.")]
         public string NewUsername { get; set; } = string.Empty;
     }
 
@@ -87,7 +87,7 @@ namespace RPG_Login_API.Models.UserRequests
 
     public class SubmitNewEmailRequestModel
     {
-        [Required(ErrorMessage = "A new email is required.")]
+        [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "New email must be a valid email address.")]
         public string NewEmail { get; set; } = string.Empty;
     }
 }

@@ -52,7 +52,7 @@ namespace RPG_Login_API
             builder.Services.AddSingleton<IDatabaseService, DatabaseService>();
             builder.Services.AddSingleton<ITokenService, TokenService>();
             builder.Services.AddSingleton<IEmailCodeService, EmailCodeService>();
-            builder.Services.AddSingleton<ILoginApiService, LoginApiService>(); // Token and Database services must be registered before this.
+            builder.Services.AddSingleton<IUserService, UserService>(); // Token and Database services must be registered before this.
 
             // Add our controller(s). Adds an additional JSON option to remove the special naming policy from serialization
             //  behavior, which will retain PascalCase (as used by C#) rather than re-formatting to camelCase (the default).
