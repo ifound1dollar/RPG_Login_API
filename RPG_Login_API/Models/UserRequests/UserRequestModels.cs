@@ -24,7 +24,7 @@ namespace RPG_Login_API.Models.UserRequests
 
     public class RegisterRequestModel
     {
-        [RegularExpression(@"^[a-zA-Z0-9_]{5,20}$", ErrorMessage = "Username must be 5-20 characters and can only include uppercase and lowercase letters, digits, and underscores.")]
+        [RegularExpression(@"^[a-zA-Z0-9_ ]{3,16}$", ErrorMessage = "Username must be 3-16 characters and can only include letters, digits, underscores, and spaces.")]
         public string Username { get; set; } = string.Empty;
 
         [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "Email must be a valid email address.")]
@@ -75,7 +75,7 @@ namespace RPG_Login_API.Models.UserRequests
 
     public class ChangeUsernameRequestModel
     {
-        [RegularExpression(@"^[a-zA-Z0-9_]{5,20}$", ErrorMessage = "Username must be 5-20 characters and can only include uppercase and lowercase letters, digits, and underscores.")]
+        [RegularExpression(@"^[a-zA-Z0-9_ ]{3,16}$", ErrorMessage = "New username must be 3-16 characters and can only include letters, digits, underscores, and spaces.")]
         public string NewUsername { get; set; } = string.Empty;
     }
 

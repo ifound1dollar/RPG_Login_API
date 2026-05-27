@@ -3,6 +3,8 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
 using Org.BouncyCastle.Asn1.Ocsp;
+using ProfanityFilter;
+using ProfanityFilter.Interfaces;
 using RPG_Login_API.Configuration;
 using RPG_Login_API.Data;
 using RPG_Login_API.Models.MongoDB;
@@ -30,6 +32,7 @@ namespace RPG_Login_API.Services
         private readonly IEmailCodeService _emailCodeService;
         private readonly ILogger _logger;
 
+        private readonly ProfanityFilter.ProfanityFilter _profanityFilter;
         private readonly HashSet<string> _bannedPasswords;
 
         public UserService(IDatabaseService databaseService, ITokenService tokenService, IEmailCodeService emailCodeService,
@@ -42,8 +45,11 @@ namespace RPG_Login_API.Services
             _logger = logger;
 
             // Load a list of 100000 most commonly used passwords, used to prevent unsafe passwords.
-            string badPasswordsFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Utility", "100k-most-used-passwords-NCSC.txt");
-            _bannedPasswords = new HashSet<string>(System.IO.File.ReadAllLines(badPasswordsFilePath), StringComparer.Ordinal);
+            string filePath = Path.Combine(Directory.GetCurrentDirectory(), "Utility", "100k-most-used-passwords-NCSC.txt");
+            _bannedPasswords = new HashSet<string>(System.IO.File.ReadAllLines(filePath), StringComparer.Ordinal);
+
+            filePath = Path.Combine(Directory.GetCurrentDirectory(), "Utility", "minimal-profanity-filter-list.txt");
+            _profanityFilter = new ProfanityFilter.ProfanityFilter(File.ReadAllLines(filePath).ToList());
         }
 
 
@@ -97,43 +103,8 @@ namespace RPG_Login_API.Services
                 return (403, "Account already logged into launcher on another device, please try again later.");
             }
 
-            // GENERATE RESPONSE | Finally, token is confirmed fully valid so determine login response based on account state.
-            LoginResponseModel response;
-            if (!userAccount.IsEmailVerified || userAccount.DoesPasswordNeedReset)
-            {
-                // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
-                int statusCode = (!userAccount.IsEmailVerified) ? 1 : 2;                    // 1 if unconfirmed, else 2 for password reset
-                string role = (!userAccount.IsEmailVerified) ? TokenService.Roles.EmailNotVerified : TokenService.Roles.ResetPassword;
-                response = new LoginResponseModel()
-                {
-                    Username = userAccount.Username,
-                    Email = userAccount.Email,
-                    LoginStatusCode = statusCode,
-                    RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, role, durationMinutes: 15),
-                    AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
-                };
-
-                // Unconfirmed or reset required will need a new confirmation code. Do not await send because it can take a while.
-                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
-            }
-            else
-            {
-                // Else account state is good, so return full login with refresh token AND access token.
-                response = new LoginResponseModel()
-                {
-                    Username = userAccount.Username,
-                    Email = userAccount.Email,
-                    LoginStatusCode = 0,
-                    RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
-                    AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
-                };
-                userAccount.InLauncherStatus = true;
-                userAccount.LastInLauncherTime = DateTime.UtcNow;
-            }
-
-            // UPDATE DATABASE | After token generation, update document in database with newly-generated HASHED refresh token.
+            // SUCCESS: GENERATE RESPONSE AND UPDATE DATABASE | Generate response model update document in database with new refresh token.
+            LoginResponseModel response = GenerateLoginResponse(userAccount);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
@@ -146,6 +117,8 @@ namespace RPG_Login_API.Services
             // IMPORTANT: We check for a matching account here but do NOT return until password hash comparison to prevent
             //  timing attacks (performing a password hash comparison regardless of whether the account was found will
             //  cause this method to always return at the same time whether the account exists or the password is incorrect).
+
+            usernameOrEmail = usernameOrEmail.Trim();
 
             // FIND USER | Try to find user in database. Return null if we cannot find by username or email.
             var userAccount = await _databaseService.GetOneByUsernameAsync(usernameOrEmail);
@@ -186,44 +159,9 @@ namespace RPG_Login_API.Services
                 return (403, "Account already logged into launcher on another device, please try again later.");
             }
 
-            // SUCCESS: GENERATE RESPONSE | Determine how we will process login based on account state.
+            // SUCCESS: GENERATE RESPONSE AND UPDATE DATABASE | Generate response model update document in database with new refresh token.
             ClearFailedLoginAttemptsOnSuccess(userAccount.Username);
-            LoginResponseModel response;
-            if (!userAccount.IsEmailVerified || userAccount.DoesPasswordNeedReset)
-            {
-                // If unconfirmed or password needs reset, do not allow the user to access the API. Only return a refresh token.
-                int statusCode = (!userAccount.IsEmailVerified) ? 1 : 2;                    // 1 if unconfirmed, else 2 for password reset
-                string role = (!userAccount.IsEmailVerified) ? TokenService.Roles.EmailNotVerified : TokenService.Roles.ResetPassword;
-                response = new LoginResponseModel()
-                {
-                    Username = userAccount.Username,
-                    Email = userAccount.Email,
-                    LoginStatusCode = statusCode,
-                    RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, role, durationMinutes: 15),
-                    AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
-                };
-
-                // Unconfirmed or reset required will need a new confirmation code. Do not await send because it can take a while.
-                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
-            }
-            else
-            {
-                // Else account state is good, so return full login with refresh token AND access token. Also update access tokens map.
-                response = new LoginResponseModel()
-                {
-                    Username = userAccount.Username,
-                    Email = userAccount.Email,
-                    LoginStatusCode = 0,
-                    RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
-                    AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
-                    AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
-                };
-                userAccount.InLauncherStatus = true;
-                userAccount.LastInLauncherTime = DateTime.UtcNow;
-            }
-
-            // UPDATE DATABASE | After token generation, update document in database with newly-generated refresh token.
+            LoginResponseModel response = GenerateLoginResponse(userAccount);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
@@ -233,6 +171,10 @@ namespace RPG_Login_API.Services
 
         public async Task<(int, object?)> UserRegisterAsync(string username, string email, string password)
         {
+            // TRIM WHITESPACE FROM BEGINNING AND END OF USERNAME/EMAIL
+            username = username.Trim();
+            email = email.Trim();
+
             // ENSURE USERNAME AND EMAIL NOT ALREADY IN USE | Query database for any existing account with matching username or email.
             bool isAvailable = await IsUsernameAvailableAsync(username);
             if (!isAvailable)
@@ -248,10 +190,17 @@ namespace RPG_Login_API.Services
                 return (500, "An unexpected error occurred during registration, please try again.");
             }
 
+            // ENSURE NON-PROFANE USERNAME | Deny any particularly profane username using ProfanityDetector library.
+            if (_profanityFilter.DetectAllProfanities(username).Count > 0)
+            {
+                _logger.LogInformation($"Registration failed: username contains profanity blocked by filter (username: {username})");
+                return (422, "That username is not allowed, please try a different username.");
+            }
+
             // Ensure submitted password is not found in list of 100,000 most-used-passwords.
             if (_bannedPasswords.Contains(password))
             {
-                _logger.LogInformation($"Client submit new password failed, password found in list of 100000 insecure passwords (username: {username})");
+                _logger.LogInformation($"Registration failed: password found in list of 100,000 insecure passwords (username: {username})");
                 return (422, "Password does not meet minimum security standards, please submit a more secure password.");
             }
 
@@ -270,19 +219,8 @@ namespace RPG_Login_API.Services
             };
             await _databaseService.InsertOneAsync(userAccount);
 
-            // GENERATE RESPONSE | Finally, after account creation, generate response and return.
-            var response = new LoginResponseModel()
-            {
-                Username = username,
-                Email = email,
-                LoginStatusCode = 1,        // New accounts must always confirm email (code 1).
-                RefreshToken = refreshToken,
-                AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.EmailNotVerified, durationMinutes: 15),
-                AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
-            };
-
-            // GENERATE EMAIL VERIFICATION CODE | Generate and send email verification code to user's email immediately. Do not await.
-            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
+            // GENERATE RESPONSE | Finally, after account creation, generate response and return. Always has login code 1.
+            LoginResponseModel response = GenerateLoginResponse(userAccount);
 
             _logger.LogInformation($"New user registration successful (username: {username} | email: {email})");
             return (201, response);
@@ -376,6 +314,8 @@ namespace RPG_Login_API.Services
             // NOTE: We do not return a status code for security reasons (codes can be sent anonymously, and we cannot
             //  provide information to an unauthorized user whether an account exists and was sent a code successfully).
 
+            usernameOrEmail = usernameOrEmail.Trim();
+
             // FIND USER | Try to find user in database. Return null if we cannot find by username or email.
             var userAccount = await _databaseService.GetOneByUsernameAsync(usernameOrEmail);
             if (userAccount == null)
@@ -396,6 +336,8 @@ namespace RPG_Login_API.Services
         {
             // NOTE: We return a generic error message because this endpoint allows anonymous calling. We cannot allow
             //  unauthorized users to look up whether an account username/email exists by returning specific information.
+
+            usernameOrEmail = usernameOrEmail.Trim();
 
             // FIND USER | Try to find user in database. We check for valid username/email in controller, so should always find an account.
             var userAccount = await _databaseService.GetOneByUsernameAsync(usernameOrEmail);
@@ -474,12 +416,21 @@ namespace RPG_Login_API.Services
 
         public async Task<(int, object?)> UserChangeUsernameAsync(string existingUsername, string newUsername)
         {
+            newUsername = newUsername.Trim();
+
             // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(existingUsername);
             if (userAccount == null)
             {
                 _logger.LogInformation($"Username change failed: account for username stored in access token not found in database (username: {existingUsername})");
                 return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE NON-PROFANE USERNAME | Deny any particularly profane username using ProfanityDetector library.
+            if (_profanityFilter.DetectAllProfanities(newUsername).Count > 0)
+            {
+                _logger.LogInformation($"Username change failed: new username contains profanity blocked by filter (username: {newUsername})");
+                return (422, "That username is not allowed, please try a different username.");
             }
 
             // VERIFY THAT USERNAME IS NOT ALREADY IN USE | Deny change if username is already in use by a legitimate account.
@@ -580,6 +531,8 @@ namespace RPG_Login_API.Services
 
         public async Task<(int, object?)> UserSubmitNewEmailAsync(string username, string newEmail)
         {
+            newEmail = newEmail.Trim();
+
             // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
@@ -774,6 +727,44 @@ namespace RPG_Login_API.Services
 
             // Else if existing account is null, then does not exist so is available.
             return true;
+        }
+
+        private LoginResponseModel GenerateLoginResponse(UserAccountModel userAccount)
+        {
+            // Generate login response based on account state.
+            int loginCode; string role;
+            if (!userAccount.IsEmailVerified)
+            {
+                // If email not verified, code is 1 and a confirmation email must be sent.
+                loginCode = 1;
+                role = TokenService.Roles.EmailNotVerified;
+                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
+            }
+            else if (userAccount.DoesPasswordNeedReset)
+            {
+                // If password must be reset for security reasons, code is 2 and confirmation email must be sent.
+                loginCode = 2;
+                role = TokenService.Roles.ResetPassword;
+                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.PasswordReset);
+            }
+            else
+            {
+                // Else account state is good (fully set up), so grant full access with code 0 and set in launcher status/time.
+                loginCode = 0;
+                role = TokenService.Roles.FullAccess;
+                userAccount.InLauncherStatus = true;
+                userAccount.LastInLauncherTime = DateTime.UtcNow;
+            }
+
+            return new LoginResponseModel()
+            {
+                Username = userAccount.Username,
+                Email = userAccount.Email,
+                LoginStatusCode = loginCode,
+                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, role, durationMinutes: 15),
+                AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
+            };
         }
 
         #endregion
