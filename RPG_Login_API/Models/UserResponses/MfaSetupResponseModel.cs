@@ -2,6 +2,6 @@
 {
     public class MfaSetupResponseModel
     {
-        public string QrCodeBase64 { get; set; } = string.Empty;
+        public string OtpAuthLink { get; set; } = string.Empty;
     }
 }

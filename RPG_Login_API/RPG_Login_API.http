@@ -7,7 +7,7 @@ POST {{RPG_Login_API_HostAddress}}/api/users/login
 Content-Type: application/json
 Accept: application/json
 {
-  "UsernameOrEmail": "testusername",
+  "UsernameOrEmail": "scunthorpe",
   "Password": "Testpassword1!"
 }
 
@@ -120,3 +120,8 @@ Accept: application/json
 ###
 
 
+
+POST {{RPG_Login_API_HostAddress}}/api/users/setup-mfa
+Authorization: Bearer {{login.response.body.$.AccessToken}}
+Accept: application/json
+###

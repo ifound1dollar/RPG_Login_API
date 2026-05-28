@@ -662,7 +662,7 @@ namespace RPG_Login_API.Services
             }
 
             // Compare submitted recovery key against key in database.
-            if (!_mfaCodeService.ValidateRecoveryKey(userAccount, recoveryKey))
+            if (!_mfaCodeService.ValidateRecoveryCode(userAccount, recoveryKey))
             {
                 _logger.LogInformation($"Recover MFA failed: submitted recovery key does not match stored key (username: {username})");
                 return (401, "Incorrect recovery key.");

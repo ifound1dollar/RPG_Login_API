@@ -1,19 +1,12 @@
 ﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using Org.BouncyCastle.Asn1.Ocsp;
 using RPG_Login_API.Models.UserRequests;
-using RPG_Login_API.Models.UserResponses;
 using RPG_Login_API.Services;
 using RPG_Login_API.Services.Interfaces;
-using RPG_Login_API.Utility;
 using System.Diagnostics.CodeAnalysis;
 using System.IdentityModel.Tokens.Jwt;
-using System.Net;
 using System.Security.Claims;
-using System.Text.RegularExpressions;
 
 namespace RPG_Login_API.Controllers
 {

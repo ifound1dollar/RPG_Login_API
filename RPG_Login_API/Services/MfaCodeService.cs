@@ -1,6 +1,7 @@
 ﻿using MailKit.Search;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
+using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
@@ -30,6 +31,13 @@ namespace RPG_Login_API.Services
             _databaseService = databaseService;
             _settings = settings;
             _logger = logger;
+
+            // TEMP DELETE THIS
+            //SecureRandom random = new();
+            //CipherKeyGenerator keyGen = new();
+            //keyGen.Init(new KeyGenerationParameters(random, 256));
+            //byte[] key = keyGen.GenerateKey();
+            //Console.WriteLine(Convert.ToBase64String(key));
         }
 
 
@@ -50,14 +58,14 @@ namespace RPG_Login_API.Services
             return isValid;
         }
 
-        public bool ValidateRecoveryKey(UserAccountModel userAccount, string recoveryKey)
+        public bool ValidateRecoveryCode(UserAccountModel userAccount, string recoveryCode)
         {
-            // Remove any whitespace from user-submitted recovery key. Recovery key will otherwise already be in hex form.
-            string trimmedKey = recoveryKey.Replace(" ", "");
+            // Remove any whitespace from user-submitted recovery code. Recovery code will otherwise already be in hex form.
+            string trimmedKey = recoveryCode.Replace(" ", "");
 
-            // Retrieve hashed key from database and compare, then return whether they match.
-            string hashedKey = userAccount.MfaRecoveryCodeHash;
-            bool isValid = HashUtility.CompareMfaRecoveryCodeToHash(recoveryKey, hashedKey);
+            // Retrieve hashed code from database and compare, then return whether they match.
+            string hashedCode = userAccount.MfaRecoveryCodeHash;
+            bool isValid = HashUtility.CompareMfaRecoveryCodeToHash(recoveryCode, hashedCode);
 
             return isValid;
         }
@@ -76,26 +84,19 @@ namespace RPG_Login_API.Services
                 otpauth://totp/{issuer}:{user}?secret={base32Key}&issuer={issuer}&digits=6&period=30
                 """;
 
-            // Generate QR code from the URI above.
-            using var qrGenerator = new QRCodeGenerator();
-            using var qrCodeData = qrGenerator.CreateQrCode(otpUri, QRCodeGenerator.ECCLevel.Q);
-            using var qrCode = new PngByteQRCode(qrCodeData);
-            byte[] qrCodeBytes = qrCode.GetGraphic(16);
-            string qrCodeBase64 = Convert.ToBase64String(qrCodeBytes);
-
-            // Encrypt base32 MFA key and write to pending MFA key field in database.
-            userAccount.PendingMfaKey = EncryptMfaKey(base32Key);
+            // Encrypt raw MFA key and write to pending MFA key field in database.
+            userAccount.PendingMfaKey = EncryptMfaKey(mfaKey);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // Return QR code in model as base64 string (ensure to set http json attributes)
             var response = new MfaSetupResponseModel
             {
-                QrCodeBase64 = qrCodeBase64
+                OtpAuthLink = otpUri
             };
             return response;
         }
 
-        public async Task<MfaRecoveryKeyResponseModel?> MovePendingMfaToActive(UserAccountModel userAccount)
+        public async Task<MfaRecoveryCodeResponseModel?> MovePendingMfaToActive(UserAccountModel userAccount)
         {
             // Verify that pending key is not empty (in case this method was called erroneously by a logged-in user).
             if (string.IsNullOrEmpty(userAccount.PendingMfaKey))
@@ -107,23 +108,18 @@ namespace RPG_Login_API.Services
             userAccount.ActiveMfaKey = userAccount.PendingMfaKey;
             userAccount.PendingMfaKey = string.Empty;
 
-            // Generate recovery key for this user.
-            byte[] randomBytes = new byte[8];
-            using (var rng = RandomNumberGenerator.Create())
-            {
-                rng.GetBytes(randomBytes);
-            }
-            string recoveryKey = Convert.ToHexString(randomBytes).ToUpperInvariant();
+            // Generate recovery code for this user.
+            string recoveryCode = GenerateMfaRecoveryCode();
 
-            // Hash and salt new recovery key, then write it to the database.
-            string hashedKey = HashUtility.GenerateNewMfaRecoveryCodeHash(recoveryKey);
-            userAccount.MfaRecoveryCodeHash = hashedKey;
+            // Hash and salt new recovery code, then write it to the database.
+            string hashedCode = HashUtility.GenerateNewMfaRecoveryCodeHash(recoveryCode);
+            userAccount.MfaRecoveryCodeHash = hashedCode;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // Finally, return the raw (hex) key to the user so they can save it.
-            return new MfaRecoveryKeyResponseModel
+            return new MfaRecoveryCodeResponseModel
             {
-                RecoveryKey = recoveryKey
+                RecoveryCode = recoveryCode
             };
         }
 
@@ -131,22 +127,24 @@ namespace RPG_Login_API.Services
 
         #region Private: Utility
 
-        private string GenerateMfaRecoveryKey()
+        private string GenerateMfaRecoveryCode()
         {
-            return string.Empty;
+            byte[] randomBytes = new byte[12];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(randomBytes);
+            }
+            return Convert.ToHexString(randomBytes).ToUpperInvariant();
         }
 
-        private string EncryptMfaKey(string rawKey)
+        private string EncryptMfaKey(byte[] rawKeyBytes)
         {
             // Encrypting with AES-GCM. 256-bit key. 12-byte nonce.
-
-            // Convert string to byte[].
-            byte[] rawKeyBytes = Encoding.UTF8.GetBytes(rawKey);
 
             // Create nonce and convert string encryption key to byte[].
             byte[] nonce = new byte[12];
             new SecureRandom().NextBytes(nonce);
-            byte[] key = Encoding.UTF8.GetBytes(_settings.Value.SymmetricKey);
+            byte[] key = Convert.FromBase64String(_settings.Value.Base64Key);
 
             // Generate and initialize cipher with encryption parameters.
             var cipher = new GcmBlockCipher(new AesEngine());
@@ -158,8 +156,12 @@ namespace RPG_Login_API.Services
             int len = cipher.ProcessBytes(rawKeyBytes, 0, rawKeyBytes.Length, cipherText, 0);
             cipher.DoFinal(cipherText, len);
 
-            // Convert output byte[] back to string and return.
-            return Encoding.UTF8.GetString(cipherText);
+            // Combine nonce with ciphertext (required for decryption), then return combined as UTF8 string.
+            byte[] combined = new byte[nonce.Length + cipherText.Length];
+            Array.Copy(nonce, 0, combined, 0, nonce.Length);
+            Array.Copy(cipherText, 0, combined, nonce.Length, cipherText.Length);
+
+            return Convert.ToBase64String(combined);
         }
 
         private byte[] DecryptMfaKey(string encryptedKey)
@@ -167,12 +169,16 @@ namespace RPG_Login_API.Services
             // Decrypting with AES-GCM. 256-bit key. 12-byte nonce.
 
             // Convert input string to byte[].
-            byte[] encryptedKeyBytes = Encoding.UTF8.GetBytes(encryptedKey);
+            byte[] encryptedKeyBytes = Convert.FromBase64String(encryptedKey);
 
-            // Create nonce and convert string encryption key to byte[].
+            // Convert string encryption key to byte[].
+            byte[] key = Convert.FromBase64String(_settings.Value.Base64Key);
+
+            // Pull nonce from first 12 bytes of encrypted key, and store remainder of actual key in separate byte[].
             byte[] nonce = new byte[12];
-            new SecureRandom().NextBytes(nonce);
-            byte[] key = Encoding.UTF8.GetBytes(_settings.Value.SymmetricKey);
+            Array.Copy(encryptedKeyBytes, nonce, nonce.Length);
+            byte[] splitBytes = new byte[encryptedKeyBytes.Length - nonce.Length];
+            Array.Copy(encryptedKeyBytes, nonce.Length, splitBytes, 0, splitBytes.Length);
 
             // Generate and initialize cipher with decryption parameters.
             var cipher = new GcmBlockCipher(new AesEngine());
@@ -180,8 +186,8 @@ namespace RPG_Login_API.Services
             cipher.Init(false, parameters);
 
             // Actually perform decryption.
-            byte[] plainText = new byte[cipher.GetOutputSize(encryptedKeyBytes.Length)];
-            int len = cipher.ProcessBytes(encryptedKeyBytes, 0, encryptedKeyBytes.Length, plainText, 0);
+            byte[] plainText = new byte[cipher.GetOutputSize(splitBytes.Length)];
+            int len = cipher.ProcessBytes(splitBytes, 0, splitBytes.Length, plainText, 0);
             cipher.DoFinal(plainText, len);
 
             return plainText;
