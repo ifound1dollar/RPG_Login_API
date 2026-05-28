@@ -56,8 +56,8 @@ namespace RPG_Login_API.Services
             string trimmedKey = recoveryKey.Replace(" ", "");
 
             // Retrieve hashed key from database and compare, then return whether they match.
-            string hashedKey = userAccount.MfaRecoveryKeyHash;
-            bool isValid = HashUtility.CompareMfaRecoveryKeyToHash(recoveryKey, hashedKey);
+            string hashedKey = userAccount.MfaRecoveryCodeHash;
+            bool isValid = HashUtility.CompareMfaRecoveryCodeToHash(recoveryKey, hashedKey);
 
             return isValid;
         }
@@ -116,8 +116,8 @@ namespace RPG_Login_API.Services
             string recoveryKey = Convert.ToHexString(randomBytes).ToUpperInvariant();
 
             // Hash and salt new recovery key, then write it to the database.
-            string hashedKey = HashUtility.GenerateNewMfaRecoveryKeyHash(recoveryKey);
-            userAccount.MfaRecoveryKeyHash = hashedKey;
+            string hashedKey = HashUtility.GenerateNewMfaRecoveryCodeHash(recoveryKey);
+            userAccount.MfaRecoveryCodeHash = hashedKey;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // Finally, return the raw (hex) key to the user so they can save it.

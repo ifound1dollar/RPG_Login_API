@@ -122,18 +122,18 @@ namespace RPG_Login_API.Utility
 
 
         /// <summary>
-        /// Generates a new hash for the passed-in MFA recovery key. Performs the same logic as for passwords,
+        /// Generates a new hash for the passed-in MFA recovery code. Performs the same logic as for passwords,
         ///  adding salt and following industry standards for security.
         /// </summary>
-        /// <param name="recoveryKey"> The MFA recovery key to hash. </param>
-        /// <returns> The salted and hashed MFA recovery key, as a string. </returns>
-        public static string GenerateNewMfaRecoveryKeyHash(string recoveryKey)
+        /// <param name="recoveryCode"> The MFA recovery code to hash. </param>
+        /// <returns> The salted and hashed MFA recovery code, as a string. </returns>
+        public static string GenerateNewMfaRecoveryCodeHash(string recoveryCode)
         {
             // Generate salt.
             byte[] salt = RandomNumberGenerator.GetBytes(SALT_SIZE);
 
             // Generate hash using PBKDF2.
-            byte[] hash = Rfc2898DeriveBytes.Pbkdf2(recoveryKey, salt, ITERATIONS, HashAlgorithmName.SHA256, HASH_SIZE);
+            byte[] hash = Rfc2898DeriveBytes.Pbkdf2(recoveryCode, salt, ITERATIONS, HashAlgorithmName.SHA256, HASH_SIZE);
 
             // Combine salt and hash.
             byte[] combined = new byte[SALT_SIZE + HASH_SIZE];
@@ -146,15 +146,15 @@ namespace RPG_Login_API.Utility
         }
 
         /// <summary>
-        /// Compares the submitted MFA recovery key against the hashed version. Returns whether the tokens match.
+        /// Compares the submitted MFA recovery code against the hashed version. Returns whether the codes match.
         /// </summary>
-        /// <param name="submittedRecoveryKey"> The raw MFA recovery key to be compared against the hashed version. </param>
-        /// <param name="hashedRecoveryKey"> The hashed version of the recovery key to be compared against. </param>
-        /// <returns> Whether the recovery keys match. True if matching, false otherwise. </returns>
-        public static bool CompareMfaRecoveryKeyToHash(string submittedRecoveryKey, string hashedRecoveryKey)
+        /// <param name="submittedRecoveryCode"> The raw MFA recovery code to be compared against the hashed version. </param>
+        /// <param name="hashedRecoveryCode"> The hashed version of the recovery code to be compared against. </param>
+        /// <returns> Whether the recovery codes match. True if matching, false otherwise. </returns>
+        public static bool CompareMfaRecoveryCodeToHash(string submittedRecoveryCode, string hashedRecoveryCode)
         {
             // Extract iterations and base64 string by splitting on the '$' character.
-            string[] split = hashedRecoveryKey.Split('$');      // First two elements are the algorithm (starts with $ so [0] is empty string).
+            string[] split = hashedRecoveryCode.Split('$');     // First two elements are the algorithm (starts with $ so [0] is empty string).
             if (!int.TryParse(split[2], out int iterations)) return false;
             string base64 = split[3];
 
@@ -166,7 +166,7 @@ namespace RPG_Login_API.Utility
             Array.Copy(originalBytes, 0, salt, 0, SALT_SIZE);
 
             // Generate new hash with extracted salt and input password. Use local iterations because algorithm must match.
-            byte[] newBytes = Rfc2898DeriveBytes.Pbkdf2(submittedRecoveryKey, salt, iterations, HashAlgorithmName.SHA256, HASH_SIZE);
+            byte[] newBytes = Rfc2898DeriveBytes.Pbkdf2(submittedRecoveryCode, salt, iterations, HashAlgorithmName.SHA256, HASH_SIZE);
 
             // Compare existing hash against newly-generated hash, returning based on whether they match.
             // NOTE: We only need to compare AFTER the first SALT_SIZE bytes, because the newBytes array has

@@ -847,21 +847,21 @@ namespace RPG_Login_API.Services
             if (!userAccount.IsEmailVerified)
             {
                 // If email not verified, code is 1 and a confirmation email must be sent.
-                loginCode = 100;
+                loginCode = 10;
                 role = TokenService.Roles.EmailNotVerified;
                 _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
             }
             else if (userAccount.DoesPasswordNeedReset)
             {
                 // If password must be reset for security reasons, code is 2 and confirmation email must be sent.
-                loginCode = 200;
+                loginCode = 20;
                 role = TokenService.Roles.ResetPassword;
                 _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.PasswordReset);
             }
             else if (string.IsNullOrEmpty(userAccount.ActiveMfaKey))
             {
                 // If no MFA key, then MFA is not yet enabled for this account.
-                loginCode = 300;
+                loginCode = 30;
                 role = TokenService.Roles.MfaNotEnabled;
             }
             else

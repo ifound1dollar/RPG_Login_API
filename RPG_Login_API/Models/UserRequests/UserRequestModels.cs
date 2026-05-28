@@ -111,7 +111,7 @@ namespace RPG_Login_API.Models.UserRequests
 
     public class RecoverMfaRequestModel
     {
-        [Required(ErrorMessage = "Recovery key is required.")]
-        public string RecoveryKey { get; set; } = string.Empty;
+        [Required(ErrorMessage = "Recovery code is required.")]
+        public string RecoveryCode { get; set; } = string.Empty;
     }
 }

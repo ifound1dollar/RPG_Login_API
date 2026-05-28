@@ -40,8 +40,8 @@ namespace RPG_Login_API.Models.MongoDB
         [BsonElement("pending_mfa_key")]
         public string PendingMfaKey { get; set; } = string.Empty;
 
-        [BsonElement("mfa_recovery_key_hash")]
-        public string MfaRecoveryKeyHash { get; set; } = string.Empty;
+        [BsonElement("mfa_recovery_code_hash")]
+        public string MfaRecoveryCodeHash { get; set; } = string.Empty;
 
         [BsonElement("refresh_token")]
         public string RefreshTokenHash { get; set; } = string.Empty;

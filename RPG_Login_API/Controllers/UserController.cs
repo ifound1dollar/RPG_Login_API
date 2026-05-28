@@ -322,7 +322,7 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserRecoverMfaAsync(username, request.RecoveryKey);
+            (int code, object? response) = await _service.UserRecoverMfaAsync(username, request.RecoveryCode);
             return StatusCode(code, response);
         }
 
