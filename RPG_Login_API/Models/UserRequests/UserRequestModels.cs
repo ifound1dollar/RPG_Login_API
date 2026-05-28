@@ -22,6 +22,12 @@ namespace RPG_Login_API.Models.UserRequests
         public string Password { get; set; } = string.Empty;
     }
 
+    public class SubmitMfaCodeRequestModel
+    {
+        [StringLength(6, ErrorMessage = "MFA code must be length 6.")]
+        public string MfaCode { get; set; } = string.Empty;
+    }
+
     public class RegisterRequestModel
     {
         [RegularExpression(@"^[a-zA-Z0-9_ ]{3,16}$", ErrorMessage = "Username must be 3-16 characters and can only include letters, digits, underscores, and spaces.")]
@@ -48,7 +54,7 @@ namespace RPG_Login_API.Models.UserRequests
 
     public class VerifyEmailRequestModel
     {
-        [Required(ErrorMessage = "A confirmation code is required.")]
+        [StringLength(8, ErrorMessage = "Confirmation code must be length 8.")]
         public string Code { get; set; } = string.Empty;
     }
 
@@ -81,7 +87,7 @@ namespace RPG_Login_API.Models.UserRequests
 
     public class InitiateEmailChangeRequestModel
     {
-        [Required(ErrorMessage = "A confirmation code is required.")]
+        [StringLength(8, ErrorMessage = "Confirmation code must be length 8.")]
         public string Code { get; set; } = string.Empty;
     }
 
@@ -89,5 +95,23 @@ namespace RPG_Login_API.Models.UserRequests
     {
         [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "New email must be a valid email address.")]
         public string NewEmail { get; set; } = string.Empty;
+    }
+
+
+
+
+
+    // MFA
+
+    public class VerifyMfaSetupRequestModel
+    {
+        [StringLength(6, ErrorMessage = "MFA code must be length 6.")]
+        public string MfaCode { get; set; } = string.Empty;
+    }
+
+    public class RecoverMfaRequestModel
+    {
+        [Required(ErrorMessage = "Recovery key is required.")]
+        public string RecoveryKey { get; set; } = string.Empty;
     }
 }

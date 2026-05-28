@@ -30,17 +30,19 @@ namespace RPG_Login_API.Services
         private readonly IDatabaseService _databaseService;
         private readonly ITokenService _tokenService;
         private readonly IEmailCodeService _emailCodeService;
+        private readonly IMfaCodeService _mfaCodeService;
         private readonly ILogger _logger;
 
         private readonly ProfanityFilter.ProfanityFilter _profanityFilter;
         private readonly HashSet<string> _bannedPasswords;
 
         public UserService(IDatabaseService databaseService, ITokenService tokenService, IEmailCodeService emailCodeService,
-            ILogger<UserService> logger)
+            IMfaCodeService mfaCodeService, ILogger<UserService> logger)
         {
             _databaseService = databaseService;
             _tokenService = tokenService;
             _emailCodeService = emailCodeService;
+            _mfaCodeService = mfaCodeService;
 
             _logger = logger;
 
@@ -104,7 +106,7 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: GENERATE RESPONSE AND UPDATE DATABASE | Generate response model update document in database with new refresh token.
-            LoginResponseModel response = GenerateLoginResponse(userAccount);
+            LoginResponseModel response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
@@ -161,12 +163,33 @@ namespace RPG_Login_API.Services
 
             // SUCCESS: GENERATE RESPONSE AND UPDATE DATABASE | Generate response model update document in database with new refresh token.
             ClearFailedLoginAttemptsOnSuccess(userAccount.Username);
-            LoginResponseModel response = GenerateLoginResponse(userAccount);
+            LoginResponseModel response = GenerateLoginResponse(userAccount, isInitialLoginStep: true);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"User login successful (username: {response.Username}) with login code {response.LoginStatusCode}");
             return (200, response);
+        }
+
+        public async Task<(int, object?)> UserSubmitMfaCodeAsync(string username, string mfaCode)
+        {
+            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Submit MFA code failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // Validate submitted code, differentiating between active and pending code based on submitted role.
+            if (!_mfaCodeService.ValidateMfaCode(userAccount, mfaCode, isForActive: true))
+            {
+                _logger.LogInformation($"Submit MFA code failed: incorrect MFA code submitted by user (username: {username})");
+                return (401, "Incorrect multi-factor authentication code.");
+            }
+
+            _logger.LogInformation($"Submit MFA code successful (username: {username})");
+            return (200, GenerateLoginResponse(userAccount, isInitialLoginStep: false));
         }
 
         public async Task<(int, object?)> UserRegisterAsync(string username, string email, string password)
@@ -219,8 +242,8 @@ namespace RPG_Login_API.Services
             };
             await _databaseService.InsertOneAsync(userAccount);
 
-            // GENERATE RESPONSE | Finally, after account creation, generate response and return. Always has login code 1.
-            LoginResponseModel response = GenerateLoginResponse(userAccount);
+            // GENERATE RESPONSE | Finally, after account creation, generate response and return. Always has email not verified login code.
+            LoginResponseModel response = GenerateLoginResponse(userAccount, isInitialLoginStep: true);
 
             _logger.LogInformation($"New user registration successful (username: {username} | email: {email})");
             return (201, response);
@@ -248,6 +271,8 @@ namespace RPG_Login_API.Services
             _logger.LogInformation($"User logout successful (username: {username})");
             return (200, "Logout successful.");
         }
+
+
 
         public async Task<(int, object?)> UserResendEmailVerificationCode(string username, bool isForNewAccount)
         {
@@ -308,6 +333,8 @@ namespace RPG_Login_API.Services
             _logger.LogInformation($"User email verification successful (username: {username}, verified email: {targetEmail})");
             return (200, response);
         }
+
+
 
         public async Task UserForgotPasswordAsync(string usernameOrEmail)
         {
@@ -414,6 +441,8 @@ namespace RPG_Login_API.Services
             return (200, "Password reset successful.");
         }
 
+
+
         public async Task<(int, object?)> UserChangeUsernameAsync(string existingUsername, string newUsername)
         {
             newUsername = newUsername.Trim();
@@ -477,6 +506,8 @@ namespace RPG_Login_API.Services
             _logger.LogInformation($"User successfully changed username (old username: {existingUsername} | new username: {newUsername})");
             return (200, response);
         }
+
+
 
         public async Task<(int, object?)> UserRequestEmailChangeAsync(string username)
         {
@@ -567,6 +598,86 @@ namespace RPG_Login_API.Services
 
             _logger.LogInformation($"User submit new email successful (username: {username} | current email: {userAccount.Email} | new email: {newEmail})");
             return (200, "Submit new email successful.");
+        }
+
+
+
+
+        public async Task<(int, object?)> UserSetupMfaAsync(string username)
+        {
+            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Setup MFA failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            var response = await _mfaCodeService.GenerateNewMfaKeyForUser(userAccount);
+            if (response == null)
+            {
+                _logger.LogInformation($"Setup MFA failed: could not generate a new MFA key for user (username: {username})");
+                return (500, "An unexpected error occurred during MFA setup, please try again.");
+            }
+            _logger.LogInformation($"Setup MFA successful (username: {username})");
+            return (200, response);
+        }
+
+        public async Task<(int, object?)> UserVerifyMfaSetupAsync(string username, string mfaCode)
+        {
+            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Verify MFA setup failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // Validate submitted code against the pending key (verifying setup checks pending only).
+            if (!_mfaCodeService.ValidateMfaCode(userAccount, mfaCode, isForActive: false))
+            {
+                _logger.LogInformation($"Verify MFA setup failed: incorrect MFA code submitted by user (username: {username})");
+                return (401, "Incorrect multi-factor authentication code.");
+            }
+
+            // Else successful, so move MFA key from pending to active and return generated recovery key.
+            var response = await _mfaCodeService.MovePendingMfaToActive(userAccount);
+            if (response == null)
+            {
+                _logger.LogInformation($"Verify MFA setup failed: tried to verify a pending MFA code that does not exist (username: {username})");
+                return (500, "An unexpected error occurred during MFA setup verification, please try again.");
+            }
+            _logger.LogInformation($"Verify MFA setup successful (username: {username})");
+            return (200, response);
+        }
+
+        public async Task<(int, object?)> UserRecoverMfaAsync(string username, string recoveryKey)
+        {
+            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Recover MFA failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // Compare submitted recovery key against key in database.
+            if (!_mfaCodeService.ValidateRecoveryKey(userAccount, recoveryKey))
+            {
+                _logger.LogInformation($"Recover MFA failed: submitted recovery key does not match stored key (username: {username})");
+                return (401, "Incorrect recovery key.");
+            }
+
+            // Else correct key, so generate new MFA key and return response QR code to user.
+
+            var response = await _mfaCodeService.GenerateNewMfaKeyForUser(userAccount);
+            if (response == null)
+            {
+                _logger.LogInformation($"Recover MFA failed: could not generate a new MFA key for user (username: {username})");
+                return (500, "An unexpected error occurred during MFA recovery, please try again.");
+            }
+            _logger.LogInformation($"Recover MFA successful (username: {username})");
+            return (200, response);
         }
 
         #endregion
@@ -729,31 +840,45 @@ namespace RPG_Login_API.Services
             return true;
         }
 
-        private LoginResponseModel GenerateLoginResponse(UserAccountModel userAccount)
+        private LoginResponseModel GenerateLoginResponse(UserAccountModel userAccount, bool isInitialLoginStep)
         {
             // Generate login response based on account state.
             int loginCode; string role;
             if (!userAccount.IsEmailVerified)
             {
                 // If email not verified, code is 1 and a confirmation email must be sent.
-                loginCode = 1;
+                loginCode = 100;
                 role = TokenService.Roles.EmailNotVerified;
                 _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
             }
             else if (userAccount.DoesPasswordNeedReset)
             {
                 // If password must be reset for security reasons, code is 2 and confirmation email must be sent.
-                loginCode = 2;
+                loginCode = 200;
                 role = TokenService.Roles.ResetPassword;
                 _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.PasswordReset);
             }
+            else if (string.IsNullOrEmpty(userAccount.ActiveMfaKey))
+            {
+                // If no MFA key, then MFA is not yet enabled for this account.
+                loginCode = 300;
+                role = TokenService.Roles.MfaNotEnabled;
+            }
             else
             {
-                // Else account state is good (fully set up), so grant full access with code 0 and set in launcher status/time.
-                loginCode = 0;
-                role = TokenService.Roles.FullAccess;
-                userAccount.InLauncherStatus = true;
-                userAccount.LastInLauncherTime = DateTime.UtcNow;
+                // Else account state is good (fully set up), so check whether we are awaiting MFA submission (pending login).
+                if (isInitialLoginStep)
+                {
+                    loginCode = 1;
+                    role = TokenService.Roles.AwaitingMfa;
+                }
+                else
+                {
+                    loginCode = 0;
+                    role = TokenService.Roles.FullAccess;
+                    userAccount.InLauncherStatus = true;
+                    userAccount.LastInLauncherTime = DateTime.UtcNow;
+                }
             }
 
             return new LoginResponseModel()

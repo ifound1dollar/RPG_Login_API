@@ -39,8 +39,9 @@ namespace RPG_Login_API
             var tokenSettings = builder.Configuration.GetSection("TokenSettings");
             builder.Services.Configure<TokenSettings>(tokenSettings);
 
-            // Email SMTP service settings (in secrets.json).
+            // Email SMTP service settings (in secrets.json), and MFA service settings.
             builder.Services.Configure<EmailServiceSettings>(builder.Configuration.GetSection("EmailServiceSettings"));
+            builder.Services.Configure<MfaServiceSettings>(builder.Configuration.GetSection("MfaServiceSettings"));
 
             // Configure and add JWT token authentication, passing token settings from config section above.
             ConfigureJwtValidation(builder, tokenSettings);
@@ -52,6 +53,7 @@ namespace RPG_Login_API
             builder.Services.AddSingleton<IDatabaseService, DatabaseService>();
             builder.Services.AddSingleton<ITokenService, TokenService>();
             builder.Services.AddSingleton<IEmailCodeService, EmailCodeService>();
+            builder.Services.AddSingleton<IMfaCodeService, MfaCodeService>();
             builder.Services.AddSingleton<IUserService, UserService>(); // Token and Database services must be registered before this.
 
             // Add our controller(s). Adds an additional JSON option to remove the special naming policy from serialization

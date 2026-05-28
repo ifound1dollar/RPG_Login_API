@@ -64,6 +64,24 @@ namespace RPG_Login_API.Controllers
 
 
 
+        [Authorize(Roles = TokenService.Roles.AwaitingMfa)]
+        [Route("submit-mfa-code")]
+        [HttpPost]
+        public async Task<ActionResult> UserSubmitMfaCode(SubmitMfaCodeRequestModel request)
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client submit MFA code, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, object? response) = await _service.UserSubmitMfaCodeAsync(username, request.MfaCode);
+            return StatusCode(code, response);
+        }
+
+
+
         [AllowAnonymous]
         [Route("register")]
         [HttpPost]
@@ -251,6 +269,60 @@ namespace RPG_Login_API.Controllers
             }
 
             (int code, object? response) = await _service.UserSubmitNewEmailAsync(username, request.NewEmail);
+            return StatusCode(code, response);
+        }
+
+
+
+        [Authorize(Roles = TokenService.Roles.MfaNotEnabled + "," + TokenService.Roles.FullAccess)]
+        [Route("setup-mfa")]
+        [HttpPost]
+        public async Task<ActionResult> UserSetupMfa()
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client setup MFA failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, object? response) = await _service.UserSetupMfaAsync(username);
+            return StatusCode(code, response);
+        }
+
+
+
+        [Authorize(Roles = TokenService.Roles.MfaNotEnabled + "," + TokenService.Roles.FullAccess)]
+        [Route("verify-mfa-setup")]
+        [HttpPost]
+        public async Task<ActionResult> UserVerifyMfaSetup(VerifyMfaSetupRequestModel request)
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client setup MFA failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, object? response) = await _service.UserVerifyMfaSetupAsync(username, request.MfaCode);
+            return StatusCode(code, response);
+        }
+
+
+
+        [Authorize(Roles = TokenService.Roles.AwaitingMfa + "," + TokenService.Roles.FullAccess)]
+        [Route("recover-mfa")]
+        [HttpPost]
+        public async Task<ActionResult> UserRecoverMfa(RecoverMfaRequestModel request)
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client recover MFA failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, object? response) = await _service.UserRecoverMfaAsync(username, request.RecoveryKey);
             return StatusCode(code, response);
         }
 
