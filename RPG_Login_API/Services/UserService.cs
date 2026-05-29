@@ -597,12 +597,15 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.");
             }
 
-            var response = await _mfaCodeService.GenerateNewMfaKeyForUser(userAccount);
-            if (response == null)
-            {
-                _logger.LogInformation($"Setup MFA failed: could not generate a new MFA key for user (username: {username})");
-                return (500, "An unexpected error occurred during MFA setup, please try again.");
-            }
+            // Generate new encrypted MFA secret key and update document with this pending key.
+            string mfaSecretKeyEncrypted = _mfaCodeService.GenerateMfaSecretKeyEncryptedBase64();
+            userAccount.PendingMfaKey = mfaSecretKeyEncrypted;
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // Finally, generate an OTP URI for this user, then return an MfaSetupResponseModel with the URI.
+            string otpUri = _mfaCodeService.GenerateOtpUriForUser(userAccount.Username, mfaSecretKeyEncrypted);
+            var response = new MfaSetupResponseModel { OtpAuthLink = otpUri };
+
             _logger.LogInformation($"Setup MFA successful (username: {username})");
             return (200, response);
         }
@@ -624,21 +627,31 @@ namespace RPG_Login_API.Services
                 return (401, "Incorrect multi-factor authentication code.");
             }
 
-            // Else successful, so move MFA key from pending to active and return generated recovery key.
-            var response = await _mfaCodeService.MovePendingMfaToActive(userAccount);
-            if (response == null)
+            // Verify that pending key is not empty (in case this method was called erroneously by a logged-in user).
+            if (string.IsNullOrEmpty(userAccount.PendingMfaKey))
             {
                 _logger.LogInformation($"Verify MFA setup failed: tried to verify a pending MFA code that does not exist (username: {username})");
                 return (500, "An unexpected error occurred during MFA setup verification, please try again.");
             }
 
-            // If response is valid, update response with full login data (verifying MFA always results in full access).
-            response.Username = userAccount.Username;
-            response.Email = userAccount.Email;
-            response.LoginStatusCode = 0;
-            response.RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30);
-            response.AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15);
-            response.AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15);
+            // Else request is valid, so generate full login response with recovery code.
+            var response = new MfaRecoveryCodeResponseModel
+            {
+                RecoveryCode = _mfaCodeService.GenerateMfaRecoveryCode(),
+                Username = userAccount.Username,
+                Email = userAccount.Email,
+                LoginStatusCode = 0,
+                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
+                AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
+            };
+
+            // Move pending MFA key to active, then update database with new MFA recovery code hash and refresh token hash.
+            userAccount.ActiveMfaKey = userAccount.PendingMfaKey;
+            userAccount.PendingMfaKey = string.Empty;
+            userAccount.MfaRecoveryCodeHash = HashUtility.GenerateNewMfaRecoveryCodeHash(response.RecoveryCode);
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"Verify MFA setup successful (username: {username})");
             return (200, response);
@@ -661,15 +674,47 @@ namespace RPG_Login_API.Services
                 return (401, "Incorrect recovery key.");
             }
 
-            // Else correct key, so generate new MFA key and return response QR code to user.
+            // Else correct key, so generate new encrypted MFA secret key and update document with this pending key.
+            string mfaSecretKeyEncrypted = _mfaCodeService.GenerateMfaSecretKeyEncryptedBase64();
+            userAccount.PendingMfaKey = mfaSecretKeyEncrypted;
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-            var response = await _mfaCodeService.GenerateNewMfaKeyForUser(userAccount);
-            if (response == null)
-            {
-                _logger.LogInformation($"Recover MFA failed: could not generate a new MFA key for user (username: {username})");
-                return (500, "An unexpected error occurred during MFA recovery, please try again.");
-            }
+            // Finally, generate an OTP URI for this user, then return an MfaSetupResponseModel with the URI.
+            string otpUri = _mfaCodeService.GenerateOtpUriForUser(userAccount.Username, mfaSecretKeyEncrypted);
+            var response = new MfaSetupResponseModel { OtpAuthLink = otpUri };
+
             _logger.LogInformation($"Recover MFA successful (username: {username})");
+            return (200, response);
+        }
+
+        public async Task<(int, object?)> UserRegenerateMfaRecoveryCodeAsync(string username)
+        {
+            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Regenerate MFA recovery code failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // Generate full login response with newly-generated recovery code.
+            var response = new MfaRecoveryCodeResponseModel
+            {
+                RecoveryCode = _mfaCodeService.GenerateMfaRecoveryCode(),   // Generate new here.
+                Username = userAccount.Username,
+                Email = userAccount.Email,
+                LoginStatusCode = 0,
+                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
+                AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
+            };
+
+            // Update database with new MFA recovery code hash and refresh token hash.
+            userAccount.MfaRecoveryCodeHash = HashUtility.GenerateNewMfaRecoveryCodeHash(response.RecoveryCode);
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            _logger.LogInformation($"Regenerate MFA recovery code successful (username: {username})");
             return (200, response);
         }
 

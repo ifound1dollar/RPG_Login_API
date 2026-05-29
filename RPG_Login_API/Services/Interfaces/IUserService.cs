@@ -28,6 +28,7 @@ namespace RPG_Login_API.Services.Interfaces
         public Task<(int, object?)> UserSetupMfaAsync(string username);
         public Task<(int, object?)> UserVerifyMfaSetupAsync(string username, string mfaCode);
         public Task<(int, object?)> UserRecoverMfaAsync(string username, string recoveryKey);
+        public Task<(int, object?)> UserRegenerateMfaRecoveryCodeAsync(string username);
 
         public Task<(int, object?)> UserPingInLauncherAsync(string username);
         public Task<(int, object?)> UserNotifyLauncherExitAsync(string username);

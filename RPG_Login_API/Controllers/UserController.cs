@@ -319,6 +319,22 @@ namespace RPG_Login_API.Controllers
             return StatusCode(code, response);
         }
 
+
+
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only fully-logged-in users can regenerate recovery code.
+        public async Task<ActionResult> UserRegenerateMfaRecoveryCode()
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client recover MFA failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, object? response) = await _service.UserRegenerateMfaRecoveryCodeAsync(username);
+            return StatusCode(code, response);
+        }
+
         #endregion
 
         #region Public: Client account state tracking

@@ -22,13 +22,11 @@ namespace RPG_Login_API.Services
     {
         // https://www.youtube.com/watch?v=pNEaBQIJ_Dg
 
-        private readonly IDatabaseService _databaseService;
         private readonly IOptions<MfaServiceSettings> _settings;
         private readonly ILogger _logger;
 
-        public MfaCodeService(IDatabaseService databaseService, IOptions<MfaServiceSettings> settings, ILogger<MfaCodeService> logger)
+        public MfaCodeService(IOptions<MfaServiceSettings> settings, ILogger<MfaCodeService> logger)
         {
-            _databaseService = databaseService;
             _settings = settings;
             _logger = logger;
 
@@ -61,73 +59,23 @@ namespace RPG_Login_API.Services
         public bool ValidateRecoveryCode(UserAccountModel userAccount, string recoveryCode)
         {
             // Remove any whitespace from user-submitted recovery code. Recovery code will otherwise already be in hex form.
-            string trimmedKey = recoveryCode.Replace(" ", "");
+            string trimmedCode = recoveryCode.Replace(" ", "");
 
             // Retrieve hashed code from database and compare, then return whether they match.
             string hashedCode = userAccount.MfaRecoveryCodeHash;
-            bool isValid = HashUtility.CompareMfaRecoveryCodeToHash(recoveryCode, hashedCode);
+            bool isValid = HashUtility.CompareMfaRecoveryCodeToHash(trimmedCode, hashedCode);
 
             return isValid;
         }
 
-        public async Task<MfaSetupResponseModel?> GenerateNewMfaKeyForUser(UserAccountModel userAccount)
+        public string GenerateMfaSecretKeyEncryptedBase64()
         {
             // Generate MFA key.
             byte[] mfaKey = KeyGeneration.GenerateRandomKey();
-            string base32Key = Base32Encoding.ToString(mfaKey);
-
-            // Generate an OTP URI, used by authenticator apps.
-            string issuer = Uri.EscapeDataString(_settings.Value.Issuer);
-            string user = Uri.EscapeDataString(userAccount.Username);
-            string otpUri =
-                $"""
-                otpauth://totp/{issuer}:{user}?secret={base32Key}&issuer={issuer}&digits=6&period=30
-                """;
-
-            // Encrypt raw MFA key and write to pending MFA key field in database.
-            userAccount.PendingMfaKey = EncryptMfaKey(mfaKey);
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
-
-            // Return QR code in model as base64 string (ensure to set http json attributes)
-            var response = new MfaSetupResponseModel
-            {
-                OtpAuthLink = otpUri
-            };
-            return response;
+            return EncryptMfaKey(mfaKey);
         }
 
-        public async Task<MfaRecoveryCodeResponseModel?> MovePendingMfaToActive(UserAccountModel userAccount)
-        {
-            // Verify that pending key is not empty (in case this method was called erroneously by a logged-in user).
-            if (string.IsNullOrEmpty(userAccount.PendingMfaKey))
-            {
-                return null;
-            }
-
-            // If pending key exists, directly replace active key with pending key and clear pending.
-            userAccount.ActiveMfaKey = userAccount.PendingMfaKey;
-            userAccount.PendingMfaKey = string.Empty;
-
-            // Generate recovery code for this user.
-            string recoveryCode = GenerateMfaRecoveryCode();
-
-            // Hash and salt new recovery code, then write it to the database.
-            string hashedCode = HashUtility.GenerateNewMfaRecoveryCodeHash(recoveryCode);
-            userAccount.MfaRecoveryCodeHash = hashedCode;
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
-
-            // Finally, return the raw (hex) key to the user so they can save it.
-            return new MfaRecoveryCodeResponseModel
-            {
-                RecoveryCode = recoveryCode
-            };
-        }
-
-
-
-        #region Private: Utility
-
-        private string GenerateMfaRecoveryCode()
+        public string GenerateMfaRecoveryCode()
         {
             byte[] randomBytes = new byte[12];
             using (var rng = RandomNumberGenerator.Create())
@@ -136,6 +84,27 @@ namespace RPG_Login_API.Services
             }
             return Convert.ToHexString(randomBytes).ToUpperInvariant();
         }
+
+        public string GenerateOtpUriForUser(string username, string encryptedSecretKeyBase64)
+        {
+            // Decrypt encrypted key and convert to base32, as required by the OTP service.
+            byte[] keyBytes = DecryptMfaKey(encryptedSecretKeyBase64);
+            string base32Key = Base32Encoding.ToString(keyBytes);
+
+            // Generate an OTP URI, used by authenticator apps.
+            string issuer = Uri.EscapeDataString(_settings.Value.Issuer);
+            string user = Uri.EscapeDataString(username);
+            string otpUri =
+                $"""
+                otpauth://totp/{issuer}:{user}?secret={base32Key}&issuer={issuer}&digits=6&period=30
+                """;
+
+            return otpUri;
+        }
+
+
+
+        #region Private: Utility
 
         private string EncryptMfaKey(byte[] rawKeyBytes)
         {

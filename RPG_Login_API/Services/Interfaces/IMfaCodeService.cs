@@ -8,8 +8,8 @@ namespace RPG_Login_API.Services.Interfaces
         public bool ValidateMfaCode(UserAccountModel userAccount, string mfaCode, bool isForActive);
         public bool ValidateRecoveryCode(UserAccountModel userAccount, string recoveryKey);
 
-        public Task<MfaSetupResponseModel?> GenerateNewMfaKeyForUser(UserAccountModel userAccount);
-
-        public Task<MfaRecoveryCodeResponseModel?> MovePendingMfaToActive(UserAccountModel userAccount);
+        public string GenerateMfaSecretKeyEncryptedBase64();
+        public string GenerateMfaRecoveryCode();
+        public string GenerateOtpUriForUser(string username, string encryptedSecretKeyBase64);
     }
 }
