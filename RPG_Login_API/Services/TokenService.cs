@@ -57,14 +57,17 @@ namespace RPG_Login_API.Services
 
         #region (Interface) Public: Token Generation
 
-        public string GenerateRefreshToken(string username, double durationDays = 30)
+        public string GenerateRefreshToken(string username, bool isFullAccess, double durationDays = 30)
         {
+            string role = (isFullAccess) ? TokenService.Roles.FullAccess : TokenService.Roles.AwaitingMfa;
+
             var tokenDescriptor = new SecurityTokenDescriptor()
             {
+                
                 Subject = new ClaimsIdentity(
                 [
                     new Claim(JwtRegisteredClaimNames.UniqueName, username),    // We are using username, not email.
-                    new Claim(ClaimTypes.Role, "refresh")                       // Use this to loosely determine token purpose.
+                    new Claim(ClaimTypes.Role, role)                            // Allows MFA skip on refresh login if full access.
                 ]),
                 Expires = DateTime.UtcNow.AddDays(durationDays),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_jwtKey), SecurityAlgorithms.HmacSha256Signature)
@@ -96,13 +99,14 @@ namespace RPG_Login_API.Services
 
         #region (Interface) Public: Token Reading, Comparison, Validation
 
-        public bool TryReadUsernameFromTokenString(string tokenString, [NotNullWhen(true)] out string? username)
+        public bool TryReadRefreshToken(string tokenString, [NotNullWhen(true)] out string? username, out bool isFullAccess)
         {
             username = null;
+            isFullAccess = false;
             if (!TryReadJwtToken(_handler, tokenString, out var token)) return false;
 
             // Assign username with valid string or null, returning true if valid and false if null.
-            return TryReadUsernameFromJwtToken(token, out username);
+            return TryReadJwtTokenData(token, out username, out isFullAccess);
         }
 
         public bool ValidateToken(string token, string guid = "")
@@ -148,11 +152,18 @@ namespace RPG_Login_API.Services
             return token != null;   // Returns true if token is valid, else false if null.
         }
 
-        private static bool TryReadUsernameFromJwtToken(JwtSecurityToken token, [NotNullWhen(true)] out string? username)
+        private static bool TryReadJwtTokenData(JwtSecurityToken token, [NotNullWhen(true)] out string? username, out bool isFullAccess)
         {
             // Retrieve username from token. IMPORTANT: ClaimType.Name MAPS TO UniqueName.
+            isFullAccess = false;
             username = token.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.UniqueName)?.Value;
-            return username != null;
+            string? role = token.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+
+            if (role != null && role == TokenService.Roles.FullAccess)
+            {
+                isFullAccess = true;
+            }
+            return (username != null && role != null);  // True if both are non-null.
         }
 
         private static bool CompareTokenGuid(string token, string passedInGuid, JwtSecurityTokenHandler handler)

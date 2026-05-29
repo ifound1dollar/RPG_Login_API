@@ -64,7 +64,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> UserLoginFromRefreshAsync(string refreshTokenString)
         {
             // PARSE TOKEN | Try to retrieve username and token object from the passed-in token string.
-            if (!_tokenService.TryReadUsernameFromTokenString(refreshTokenString, out var username))
+            if (!_tokenService.TryReadRefreshToken(refreshTokenString, out var username, out bool isFullAccess))
             {
                 _logger.LogInformation($"Refresh login failed: malformed (unreadable) refresh token in request");
                 return (400, "Malformed refresh token in refresh login request.");
@@ -97,7 +97,8 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: GENERATE RESPONSE AND UPDATE DATABASE | Generate response model update document in database with new refresh token.
-            LoginResponseModel response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
+            bool isInitialLoginStep = (!isFullAccess);      // If refresh was full access, is NOT initial step, else IS and requires MFA.
+            LoginResponseModel response = GenerateLoginResponse(userAccount, isInitialLoginStep);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
@@ -212,7 +213,7 @@ namespace RPG_Login_API.Services
             }
 
             // CREATE NEW ACCOUNT MODEL | Username and email are unique (verified in controller), so create a new user document.
-            string refreshToken = _tokenService.GenerateRefreshToken(username, durationDays: 30);
+            string refreshToken = _tokenService.GenerateRefreshToken(username, isFullAccess: false, durationDays: 30);
             UserAccountModel userAccount = new()
             {
                 Username = username,
@@ -294,12 +295,13 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: GENERATE LOGIN RESPONSE | On successful email verification, re-generate both refresh and access token (like login).
+            bool isFullAccess = (!isForNewAccount);     // New account means MFA not set up (no full access), otherwise existing has full access.
             var response = new LoginResponseModel()
             {
                 Username = userAccount.Username,
                 Email = targetEmail,
                 LoginStatusCode = 0,        // Always full success status after successful verification.
-                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, isFullAccess, durationDays: 30),
                 AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
@@ -474,7 +476,7 @@ namespace RPG_Login_API.Services
                 Username = newUsername,
                 Email = userAccount.Email,
                 LoginStatusCode = 0,        // This endpoint can only be accessed by a full-access token, so make full access again.
-                RefreshToken = _tokenService.GenerateRefreshToken(newUsername, durationDays: 30),
+                RefreshToken = _tokenService.GenerateRefreshToken(newUsername, isFullAccess: true, durationDays: 30),
                 AccessToken = _tokenService.GenerateAccessToken(newUsername, TokenService.Roles.FullAccess, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
@@ -641,7 +643,7 @@ namespace RPG_Login_API.Services
                 Username = userAccount.Username,
                 Email = userAccount.Email,
                 LoginStatusCode = 0,
-                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, isFullAccess: true, durationDays: 30),
                 AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
@@ -704,7 +706,7 @@ namespace RPG_Login_API.Services
                 Username = userAccount.Username,
                 Email = userAccount.Email,
                 LoginStatusCode = 0,
-                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, isFullAccess: true, durationDays: 30),
                 AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
@@ -919,12 +921,13 @@ namespace RPG_Login_API.Services
                 }
             }
 
+            bool isFullAccess = (!isInitialLoginStep);  // Initial login step is NOT full access, else final step grants full access.
             return new LoginResponseModel()
             {
                 Username = userAccount.Username,
                 Email = userAccount.Email,
                 LoginStatusCode = loginCode,
-                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30),
+                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, isFullAccess, durationDays: 30),
                 AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, role, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
