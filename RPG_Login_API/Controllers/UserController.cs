@@ -322,6 +322,8 @@ namespace RPG_Login_API.Controllers
 
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only fully-logged-in users can regenerate recovery code.
+        [Route("regenerate-mfa-recovery-code")]
+        [HttpPost]
         public async Task<ActionResult> UserRegenerateMfaRecoveryCode()
         {
             // Retrieve account data (username, role, guid) from access token in request header.
