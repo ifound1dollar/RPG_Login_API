@@ -157,7 +157,7 @@ namespace RPG_Login_API.Services
             // Retrieve username from token. IMPORTANT: ClaimType.Name MAPS TO UniqueName.
             isFullAccess = false;
             username = token.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.UniqueName)?.Value;
-            string? role = token.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+            string? role = token.Claims.FirstOrDefault(c => c.Type == "role")?.Value;
 
             if (role != null && role == TokenService.Roles.FullAccess)
             {

@@ -58,12 +58,13 @@ namespace RPG_Login_API.Services
 
         public bool ValidateRecoveryCode(UserAccountModel userAccount, string recoveryCode)
         {
-            // Remove any whitespace from user-submitted recovery code. Recovery code will otherwise already be in hex form.
-            string trimmedCode = recoveryCode.Replace(" ", "");
+            // Remove any whitespace from user-submitted recovery code, and make uppercase (code is in hex form).
+            string cleanCode = recoveryCode.Replace(" ", "");
+            cleanCode = cleanCode.ToUpperInvariant();
 
             // Retrieve hashed code from database and compare, then return whether they match.
             string hashedCode = userAccount.MfaRecoveryCodeHash;
-            bool isValid = HashUtility.CompareMfaRecoveryCodeToHash(trimmedCode, hashedCode);
+            bool isValid = HashUtility.CompareMfaRecoveryCodeToHash(cleanCode, hashedCode);
 
             return isValid;
         }
