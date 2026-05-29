@@ -15,6 +15,7 @@ using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
+using static QRCoder.PayloadGenerator;
 
 namespace RPG_Login_API.Services
 {
@@ -95,16 +96,6 @@ namespace RPG_Login_API.Services
                 return (401, "Invalid or expired refresh token.");
             }
 
-            // DISALLOW MULTIPLE LOGINS | If account is already logged into launcher, ensure it is not a zombie, then deny login.
-            if (userAccount.InLauncherStatus && (DateTime.UtcNow - userAccount.LastInLauncherTime < TimeSpan.FromSeconds(75)))
-            {
-                // IMPORTANT: We do not invalidate the account's stored refresh token because the account that IS currently
-                //  logged in will have its associated refresh token stored. The device doing the duplicate login attempt
-                //  will remove its refresh token client-side, which is already invalid in the database.
-                _logger.LogInformation($"Refresh login failed: user already logged in on another device");
-                return (403, "Account already logged into launcher on another device, please try again later.");
-            }
-
             // SUCCESS: GENERATE RESPONSE AND UPDATE DATABASE | Generate response model update document in database with new refresh token.
             LoginResponseModel response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
@@ -152,13 +143,6 @@ namespace RPG_Login_API.Services
             {
                 _logger.LogInformation($"Login failed: account is temporarily locked because of too many failed login attempts");
                 return (401, "Invalid username/email or password, please try again.");
-            }
-
-            // VALID BUT DISALLOW MULTIPLE LOGINS | If account is already logged into launcher, ensure it is not a zombie, then deny login.
-            if (userAccount.InLauncherStatus && (DateTime.UtcNow - userAccount.LastInLauncherTime < TimeSpan.FromSeconds(75)))
-            {
-                _logger.LogInformation($"Login failed: user already logged in on another device");
-                return (403, "Account already logged into launcher on another device, please try again later.");
             }
 
             // SUCCESS: GENERATE RESPONSE AND UPDATE DATABASE | Generate response model update document in database with new refresh token.
@@ -647,6 +631,15 @@ namespace RPG_Login_API.Services
                 _logger.LogInformation($"Verify MFA setup failed: tried to verify a pending MFA code that does not exist (username: {username})");
                 return (500, "An unexpected error occurred during MFA setup verification, please try again.");
             }
+
+            // If response is valid, update response with full login data (verifying MFA always results in full access).
+            response.Username = userAccount.Username;
+            response.Email = userAccount.Email;
+            response.LoginStatusCode = 0;
+            response.RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30);
+            response.AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15);
+            response.AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15);
+
             _logger.LogInformation($"Verify MFA setup successful (username: {username})");
             return (200, response);
         }

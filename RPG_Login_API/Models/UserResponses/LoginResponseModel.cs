@@ -4,7 +4,7 @@
     {
         public string Username { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
-        public int LoginStatusCode { get; set; } = -1;      // 0 for full success, 1 for unconfirmed email, 2 for password needs reset
+        public int LoginStatusCode { get; set; } = -1;
         public string RefreshToken { get; set; } = string.Empty;
         public string AccessToken { get; set; } = string.Empty;
         public DateTime AccessTokenExpiration { get; set; }
