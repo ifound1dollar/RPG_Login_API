@@ -285,8 +285,8 @@ namespace RPG_Login_API.Controllers
 
 
 
-        [Authorize(Roles = TokenService.Roles.MfaNotEnabled + "," + TokenService.Roles.FullAccess)]
-        [Route("verify-mfa-setup")]
+        [Authorize(Roles = TokenService.Roles.MfaNotEnabled + "," + TokenService.Roles.AwaitingMfa + "," + TokenService.Roles.FullAccess)]
+        [Route("verify-mfa-setup")]     // ^ MFA not enabled for initial setup, awaiting MFA for recover, full access for manual change
         [HttpPost]
         public async Task<ActionResult> UserVerifyMfaSetup(VerifyMfaSetupRequestModel request)
         {
