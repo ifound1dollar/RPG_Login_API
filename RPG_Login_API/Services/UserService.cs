@@ -1,21 +1,10 @@
-﻿using Microsoft.AspNetCore.Identity.Data;
-using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
-using MongoDB.Driver;
-using Org.BouncyCastle.Asn1.Ocsp;
-using ProfanityFilter;
-using ProfanityFilter.Interfaces;
-using RPG_Login_API.Configuration;
+﻿using MongoDB.Driver;
 using RPG_Login_API.Data;
 using RPG_Login_API.Models.MongoDB;
 using RPG_Login_API.Models.UserResponses;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 using System.Collections.Concurrent;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text.RegularExpressions;
-using static QRCoder.PayloadGenerator;
 
 namespace RPG_Login_API.Services
 {
