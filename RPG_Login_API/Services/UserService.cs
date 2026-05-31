@@ -170,8 +170,13 @@ namespace RPG_Login_API.Services
                 return (401, "Incorrect multi-factor authentication code.");
             }
 
+            // SUCCESS: Generate full-access login response, then update database with the newly-generated refresh token.
+            LoginResponseModel response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
             _logger.LogInformation($"Submit MFA code successful (username: {username})");
-            return (200, GenerateLoginResponse(userAccount, isInitialLoginStep: false));
+            return (200, response);
         }
 
         public async Task<(int, object?)> UserRegisterAsync(string username, string email, string password)
