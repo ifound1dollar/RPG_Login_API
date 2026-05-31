@@ -51,15 +51,33 @@ This endpoint is used to register (create) a new account. The user must submit a
 - **Method:** POST
 - **Accepts:** Nothing.
 - **Returns:** Nothing.
-- **Status codes:** 200 on success, 404 for no account found matching username in token.
+- **Status codes:** 200 on success, 401 for missing or invalid access token, 404 for no account found matching username in token.
 - **Authorization:** Requires access token with any role.
 
 This endpoint simply logs out the user, retrieving the account data (like username) directly from the token. Server-side, the account's stored refresh token is removed from the database, disallowing further access token refreshing or refresh login; the user must explicitly log in again in order to access their account. While this endpoint returns 200 or 404, the logout process will almost always be performed without the user awaiting a response from this endpoint.
 
 # Email Verification
+These endpoints are specifically for resending a confirmation code to the provided email for email verification, and actually verifying the email.
 
+### Resend email verification code
+- **Route:** */api/users/resend-email-verification-code*
+- **Method:** POST
+- **Accepts:** Nothing.
+- **Returns:** Nothing.
+- **Status codes:** 200 on success, 401 for invalid or missing access token, 403 for account currently locked or cannot resend within 60 seconds of previous send, 404 for no account found matching username in token.
+- **Authorization:** Requires access token with 'email not verified' role (initial account setup) or 'full access' role (manual email change).
 
-### 
+This endpoint is used specifically for resending a confirmation code to the user's email, particularly for the email verification process. Unlike the forgot password endpoint, this endpoint returns details regarding whether the resend was successful because it requires a valid access token from the user. This endpoint should only be used if the user explicitly requests a new code, perhaps after waiting too long and thus the original code has expired. The user should call the 'verify account email' using the sent code to verify their email.
+
+### Verify account email (using confirmation code)
+- **Route:** */api/users/verify-email*
+- **Method:** POST
+- **Accepts:** A short-duration 8-character alphanumeric confirmation code sent to the user's email address.
+- **Returns:** A login response model with a custom login code describing the access level based on account state.
+- **Status codes:** 200 on success, 400 for missing or wrong-length code in request, 401 for incorrect or expired code, 403 for account currently locked, 404 for no account found matching username in token.
+- **Authorization:** Requires access token with 'email not verified' role (initial account setup) or 'email change' role (specific to email change token).
+
+This endpoint is used to verify the email address for a given user's account. The user must submit their current access token along with the 8-character alphanumeric confirmation code that was sent to the email address associated with the account. If the code is valid, the API will set the 'is email verified' flag for the account in the database, then return a login response model noting that the account email is verified (will still require MFA setup for new account, otherwise should be full access for manual email change).
 
 
 
