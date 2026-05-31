@@ -120,7 +120,7 @@ This is the endpoint which actually initiate the email change process. It expect
 - **Method:** POST
 - **Accepts:** The desired new email address for the account.
 - **Returns:** A login response model with a full-access token.
-- **Status codes:** 200 on success, 400 for missing or invalid email address in request, 401 for missing or invalid access token, 403 for account currently locked, 404 for no account found matching username in token, 409 for new email is the same as existing email.
+- **Status codes:** 200 on success, 400 for missing or invalid email address in request, 401 for missing or invalid email change token, 403 for account currently locked, 404 for no account found matching username in token, 409 for new email is the same as existing email.
 - **Authorization:** Requires specific 'email change token', which is an access token with the particular 'email change' role.
 
 This endpoint accepts the user's desired new email address for the account, and explicitly requires the email change token generated from the manual email change initiation endpoint. The API does not tell the user whether their submitted email address is available for security reasons (otherwise this endpoint could be used as a method to generating a list of in-use emails). If the email is valid and not in use, the API will internally store this pending new email within the user's account in the database and await its verification. After successfully submitting their desired new email, the user is expected to call the 'verify new email' endpoint with the same 'email change token' used for this endpoint, which will allow the API to update the account's current email (the final step 4/4). Note that this endpoint does NOT check whether the user's email was changed less than 30 days prior because the initiate endpoint performs this check; the user cannot receive the new 'email change token' in the first place if the initiate endpoint detects it is within 30 days of previous change.
@@ -150,12 +150,55 @@ This endpoint initiates the password reset process, accepting a confirmation cod
 - **Method:** POST
 - **Accepts:** The desired new password for the account.
 - **Returns:** Nothing.
-- **Status codes:** 200 on success, 400 for missing or invalid password in request, 403 for account currently locked, 404 for no account found matching username in token, 409 for new password is the same as old password, 422 for password found in list of compromised/insecure passwords, 493 for password cannot be reset with 24 hours of previous reset.
+- **Status codes:** 200 on success, 400 for missing or invalid password in request, 401 for missing or invalid password reset token, 403 for account currently locked, 404 for no account found matching username in token, 409 for new password is the same as old password, 422 for password found in list of compromised/insecure passwords, 493 for password cannot be reset with 24 hours of previous reset.
 - **Authorization:** Requires specific 'password reset token' that was received from the password reset initiation endpoint.
 
 This endpoint executes the password reset process on the server as the final step, updating the stored password hash in the database with the salted and hashed version of the user's submitted new password. The submitted password must be 8-64 characters and can include any readable character, but must include at least one uppercase letter, lowercase letter, digit, and symbol; additionally, it cannot be found in the list of 100,000 most-commonly-used (and thus highly insecure) passwords. If submission is successful, the user is *forcefully logged out on the server for security reasons*, and the client-side application should locally log the user out as well. This submission process will fail if the user attempts to change their password with 24 hours of a previous password reset.
 
+# Multi-factor Authentication Setup and Management
+These endpoints are used for setting up multi-factor authentication and managing the current MFA configuration.
 
+### Setup MFA (initial account setup AND manual MFA setup reset, step 1/2)
+- **Route:** */api/users/setup-mfa*
+- **Method:** POST
+- **Accepts:** Nothing.
+- **Returns:** A time-based one-time-password (TOTP) URI to be used for authenticator app setup.
+- **Status codes:** 200 on success, 401 for missing or invalid access token, 403 for account currently locked, 404 for no account found matching username in token.
+- **Authorization:** Requires access token with 'mfa not enabled' role (initial account setup) or 'full access' role (manual MFA reset).
+
+This endpoint is used for generating a new MFA configuration, used on initial account creation or manual MFA setup reset (generating a new MFA configuration), but importantly *not* for MFA recovery (critically important). It generates a unique TOTP URI for this user alongside a custom configuration-specific internal MFA key, which is encrypted and stored server-side before being returned to the user in raw string format. It is the client application's responsibility to display this URI in QR code format so the user can scan it with their preferred authenticator app. After receiving this URI, the user is expected to call the 'verify MFA setup' endpoint to finalize the configuration.
+
+IMPORTANT: This endpoint cannot allow an 'awaiting MFA' user to access it because that would allow anyone with the username/email and password to fully reset the MFA setup, rendering MFA completely useless. The 'recover MFA' endpoint, which requires an 'awaiting MFA' user to submit the correct MFA recovery code, must be used for setting up a new MFA configuration when recovering MFA.
+
+### Verify MFA setup (initial account setup AND manual MFA setup reset, step 2/2)
+- **Route:** */api/users/verify-mfa-setup*
+- **Method:** POST
+- **Accepts:** A 6-digit numeric MFA code generated by the user's authenticator app.
+- **Returns:** A login response model with a full-access token, unless account state changes during verify MFA setup process.
+- **Status codes:** 200 on success, 400 for missing or wrong-length code in request, 401 for missing or invalid access token *or* invalid MFA code, 403 for account currently locked, 404 for no account found matching username in token.
+- **Authorization:** Requires access token with 'mfa not enabled' role (initial account setup), 'full access' role (manual MFA reset), or 'awaiting MFA' role (MFA recovery).
+
+This endpoint is universally used for verifying a new MFA setup. It is used on initial account creation and for manual MFA setup reset, but is also used for verifying a new MFA setup generated by the MFA recovery process (see 'recover MFA' endpoint below). This method accepts a 6-digit numeric MFA code generated by the user's authenticator app and compares it against the pending MFA configuration stored within the account data in the database; if the code is correct, it moves the pending setup to active and should return a full-access login response model. The only time it should ever return a non-full-access response is if somehow the account state changes during the MFA setup verification process (ex. email becomes un-verified for some reason). Once the MFA setup is verified, the account should be fully ready-to-go.
+
+### Recover MFA (MFA setup recovery, step 1/2)
+- **Route:** */api/users/recover-mfa*
+- **Method:** POST
+- **Accepts:** The 24-character hexadecimal MFA recovery code provided to the user upon setting up the current MFA configuration.
+- **Returns:** A time-based one-time-password (TOTP) URI to be used for authenticator app setup.
+- **Status codes:** 200 on success, 400 for missing recovery code in request, 401 for missing or invalid access token *or* invalid recovery code, 403 for account currently locked, 404 for no account found matching username in token.
+- **Authorization:** Requires access token with 'awaiting MFA' role (login successful but awaiting MFA code submission).
+
+This endpoint is used only for when a user has successfully logged in with their username/email and password, but is unable to submit the correct MFA code from their authenticator app. It allows access only with the 'awaiting MFA' role which is received after the initial login step (using credentials), and requires that the user submit the correct 24-character hexadecimal MFA recovery code. If the recovery code is valid, the API performs the same operation to generate a TOTP URI that the user must use to set up a new MFA configuration (again, it is the client application's responsibility to display the URI as a QR code). Once the code has been generated and the user has set up their configuration, they are expected to call the 'verify MFA setup' endpoint to finalize the MFA configuration.
+
+### Regenerate MFA recovery code (for fully-logged-in users)
+- **Route:** */api/users/regenerate-mfa-recovery-code*
+- **Method:** POST
+- **Accepts:** Nothing.
+- **Returns:** A full-access login response model (unless account state changes during the process) AND a new 24-character hexadecimal MFA recovery code.
+- **Status codes:** 200 on success, 401 for missing or invalid access token, 403 for account currently locked, 404 for no account found matching username in token.
+- **Authorization:** Requires access token with 'full access' role.
+
+This endpoint is used by fully-logged-in users to regenerate the current MFA recovery code for the active MFA configuration. This allows users who may have lost their current MFA recovery code to generate a new one, granted that they have access to the current MFA configuration (required to fully log in). This endpoint returns the same data as the 'verify MFA setup' endpoint, which should be a full-access login response model with the newly-generated 24-character hexadecimal MFA recovery code; the only time the login response model will be non-full-access is if the account state somehow changes during the regeneration process. Server-side, the API simply replaces the account's existing salted and hashed MFA recovery code with the newly salted and hashed one.
 
 
 
