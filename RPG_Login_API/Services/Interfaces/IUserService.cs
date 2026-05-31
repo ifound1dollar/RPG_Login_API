@@ -10,7 +10,7 @@ namespace RPG_Login_API.Services.Interfaces
     {
         public Task<(int, object?)> UserLoginFromRefreshAsync(string refreshTokenString);
         public Task<(int, object?)> UserLoginAsync(string username, string password);
-        public Task<(int, object?)> UserSubmitMfaCodeAsync(string username, string mfaCode);
+        public Task<(int, object?)> UserSubmitMfaCodeForLoginAsync(string username, string mfaCode);
         public Task<(int, object?)> UserRegisterAsync(string username, string email, string password);
         public Task<(int, object?)> UserLogoutAsync(string username);
 

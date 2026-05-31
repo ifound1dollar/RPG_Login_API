@@ -109,15 +109,19 @@ namespace RPG_Login_API.Services
             return TryReadJwtTokenData(token, out username, out isFullAccess);
         }
 
-        public bool ValidateToken(string token, string guid = "")
+        public bool ValidateToken(string submittedToken, string storedTokenHash, string guid = "")
         {
             // https://stackoverflow.com/questions/50204844/how-to-validate-a-jwt-token
             // May need to check this resource for validation testing. Might need to set ValidIssuer or ValidAudience
             //  in parameters, and Issuer and Audience in token creation.
 
+            // First, compare passed-in token against stored token hash, returning false if mismatch.
+            if (!HashUtility.CompareRefreshTokenToHash(submittedToken, storedTokenHash)) return false;
+
+            // Then, actually execute token reading and validate expiration and GUID (if applicable).
             try
             {
-                ClaimsPrincipal principal = _handler.ValidateToken(token, _validationParameters, out var validatedToken);
+                ClaimsPrincipal principal = _handler.ValidateToken(submittedToken, _validationParameters, out var validatedToken);
 
                 // If no exception thrown above, then token is valid, so check expiration.
                 if (DateTime.UtcNow >= validatedToken.ValidTo) return false;
@@ -125,7 +129,7 @@ namespace RPG_Login_API.Services
                 // If a GUID has been passed in, compare with the GUID stored in the token.
                 if (guid != string.Empty)
                 {
-                    return CompareTokenGuid(token, guid, _handler);     // Method returns false if mismatch.
+                    return CompareTokenGuid(submittedToken, guid, _handler);     // Method returns false if mismatch.
                 }
 
                 // If no GUID passed in, then we need only compare expiration, which is already valid so return true.

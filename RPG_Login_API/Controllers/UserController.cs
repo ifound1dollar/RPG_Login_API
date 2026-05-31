@@ -60,7 +60,7 @@ namespace RPG_Login_API.Controllers
         [Authorize(Roles = TokenService.Roles.AwaitingMfa)]
         [Route("submit-mfa-code")]
         [HttpPost]
-        public async Task<ActionResult> UserSubmitMfaCode(SubmitMfaCodeRequestModel request)
+        public async Task<ActionResult> UserSubmitMfaCodeForLogin(SubmitMfaCodeRequestModel request)
         {
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
@@ -69,7 +69,7 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserSubmitMfaCodeAsync(username, request.MfaCode);
+            (int code, object? response) = await _service.UserSubmitMfaCodeForLoginAsync(username, request.MfaCode);
             return StatusCode(code, response);
         }
 

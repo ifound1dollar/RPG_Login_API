@@ -38,8 +38,9 @@ namespace RPG_Login_API.Services
 
             // Load a list of 100000 most commonly used passwords, used to prevent unsafe passwords.
             string filePath = Path.Combine(Directory.GetCurrentDirectory(), "Utility", "100k-most-used-passwords-NCSC.txt");
-            _bannedPasswords = new HashSet<string>(System.IO.File.ReadAllLines(filePath), StringComparer.Ordinal);
+            _bannedPasswords = new HashSet<string>(File.ReadAllLines(filePath), StringComparer.Ordinal);
 
+            // Load custom (minimal) profanity filter list, for use when users submit a new username.
             filePath = Path.Combine(Directory.GetCurrentDirectory(), "Utility", "minimal-profanity-filter-list.txt");
             _profanityFilter = new ProfanityFilter.ProfanityFilter(File.ReadAllLines(filePath).ToList());
         }
@@ -67,21 +68,21 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.");
             }
 
-            // COMPARE TOKEN | Now that we have found a valid user, compare the stored refresh token with this refresh token.
-            if (!HashUtility.CompareRefreshTokenToHash(refreshTokenString, userAccount.RefreshTokenHash))
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
             {
-                _logger.LogInformation($"Refresh login failed: user-provided token does not match token in database (username: {username})");
-                return (401, "Invalid or expired refresh token.");
+                _logger.LogInformation($"Refresh login failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
             }
 
-            // ACTUALLY VALIDATE TOKEN | If token matches stored token in database, validate it (checks expiration and client GUID).
-            if (!_tokenService.ValidateToken(refreshTokenString))
+            // VALIDATE TOKEN | Validate token against stored refresh token AND check expiration and GUID match.
+            if (!_tokenService.ValidateToken(refreshTokenString, userAccount.RefreshTokenHash))
             {
                 // This means the token in the database is invalid, so remove it.
                 userAccount.RefreshTokenHash = string.Empty;
                 await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-                _logger.LogInformation($"Refresh login failed: token is expired or found mismatched client GUID (username: {username})");
+                _logger.LogInformation($"Refresh login failed: user-provided token does not match stored token or is expired (username: {username})");
                 return (401, "Invalid or expired refresh token.");
             }
 
@@ -128,8 +129,8 @@ namespace RPG_Login_API.Services
                 return (401, "Invalid username/email or password, please try again.");
             }
 
-            // CHECK IF ACCOUNT LOCKED | Block the successful login if the account is temporarily locked because of failed attempts.
-            if (DoesAccountHaveTooManyFailedLoginAttempts(userAccount.Username))
+            // CHECK IF ACCOUNT LOCKED | Block the successful login if the account is temporarily locked (for either reason).
+            if (IsAccountCurrentlyLocked(userAccount) || DoesAccountHaveTooManyFailedLoginAttempts(userAccount.Username))
             {
                 _logger.LogInformation($"Login failed: account is temporarily locked because of too many failed login attempts");
                 return (401, "Invalid username/email or password, please try again.");
@@ -145,20 +146,27 @@ namespace RPG_Login_API.Services
             return (200, response);
         }
 
-        public async Task<(int, object?)> UserSubmitMfaCodeAsync(string username, string mfaCode)
+        public async Task<(int, object?)> UserSubmitMfaCodeForLoginAsync(string username, string mfaCode)
         {
             // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
-                _logger.LogInformation($"Submit MFA code failed: account for username stored in access token not found in database (username: {username})");
+                _logger.LogInformation($"Submit MFA code for login failed: account for username stored in access token not found in database (username: {username})");
                 return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Submit MFA code for login failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
             }
 
             // Validate submitted code, differentiating between active and pending code based on submitted role.
             if (!_mfaCodeService.ValidateMfaCode(userAccount, mfaCode, isForActive: true))
             {
-                _logger.LogInformation($"Submit MFA code failed: incorrect MFA code submitted by user (username: {username})");
+                _logger.LogInformation($"Submit MFA code for login failed: incorrect MFA code submitted by user (username: {username})");
                 return (401, "Incorrect multi-factor authentication code.");
             }
 
@@ -225,9 +233,6 @@ namespace RPG_Login_API.Services
 
         public async Task<(int, object?)> UserLogoutAsync(string username)
         {
-            // NOTE: If the user is in-game when they log out, the game application will remain logged in, but they will need
-            //  to re-login when they want to launch the game again.
-
             // FIND USER | Try to find user in database. Return null if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
@@ -258,6 +263,13 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.");
             }
 
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Resend email verification code failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
+            }
+
             // RESEND EMAIL VERIFICATION CODE | Generate and send a new code, target email depending on context.
             string targetEmail = (isForNewAccount) ? userAccount.Email : userAccount.PendingNewEmail;
             (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(targetEmail, ConfirmationCodeData.CodeContext.EmailVerification);
@@ -274,6 +286,13 @@ namespace RPG_Login_API.Services
             {
                 _logger.LogInformation($"Email verification failed: account for username stored in access token not found in database (username: {username})");
                 return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Email verification failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
@@ -330,6 +349,13 @@ namespace RPG_Login_API.Services
                 }
             }
 
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Forgot password attempt failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {userAccount.Username})");
+                return;
+            }
+
             // TRY TO SEND CODE TO EMAIL | Do not await because sending code can take a while.
             _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.PasswordReset);
         }
@@ -351,6 +377,13 @@ namespace RPG_Login_API.Services
                     _logger.LogInformation($"Initiate password reset failed: user not found in database (username/email: {usernameOrEmail})");
                     return (401, "Invalid or expired confirmation code.");
                 }
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED | Return GENERIC error response if account is locked.
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Initiate password reset failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {userAccount.Username})");
+                return (401, "Invalid or expired confirmation code.");
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
@@ -380,10 +413,17 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.");
             }
 
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Password reset failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
+            }
+
             // Ensure submitted password is not found in list of 100,000 most-used-passwords.
             if (_bannedPasswords.Contains(newPassword))
             {
-                _logger.LogInformation($"Client submit new password failed, password found in list of 100000 insecure passwords (username: {username})");
+                _logger.LogInformation($"Password reset failed, password found in list of 100000 insecure passwords (username: {username})");
                 return (422, "Password does not meet minimum security standards, please submit a more secure password.");
             }
 
@@ -428,6 +468,13 @@ namespace RPG_Login_API.Services
             {
                 _logger.LogInformation($"Username change failed: account for username stored in access token not found in database (username: {existingUsername})");
                 return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Username change failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {userAccount.Username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
             }
 
             // ENSURE NON-PROFANE USERNAME | Deny any particularly profane username using ProfanityDetector library.
@@ -494,6 +541,13 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.");
             }
 
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Request email change failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
+            }
+
             // TRY TO SEND CODE TO EMAIL | Send a confirmation code to the account's existing email.
             (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.ChangeEmail);
 
@@ -509,6 +563,13 @@ namespace RPG_Login_API.Services
             {
                 _logger.LogInformation($"Initiate email change failed: user not found in database (username: {username})");
                 return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Initiate email change failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
@@ -545,6 +606,13 @@ namespace RPG_Login_API.Services
             {
                 _logger.LogInformation($"Submit new email failed: account for username stored in email change token not found in database (username: {username})");
                 return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Submit new email failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
             }
 
             // VERIFY NEW EMAIL IS NOT THE SAME AS PREVIOUS
@@ -588,6 +656,13 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.");
             }
 
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Setup MFA failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
+            }
+
             // Generate new encrypted MFA secret key and update document with this pending key.
             string mfaSecretKeyEncrypted = _mfaCodeService.GenerateMfaSecretKeyEncryptedBase64();
             userAccount.PendingMfaKey = mfaSecretKeyEncrypted;
@@ -609,6 +684,13 @@ namespace RPG_Login_API.Services
             {
                 _logger.LogInformation($"Verify MFA setup failed: account for username stored in access token not found in database (username: {username})");
                 return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Verify MFA setup failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
             }
 
             // Validate submitted code against the pending key (verifying setup checks pending only).
@@ -658,6 +740,13 @@ namespace RPG_Login_API.Services
                 return (404, "Failed to find user account for the provided username.");
             }
 
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Recover MFA failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
+            }
+
             // Compare submitted recovery key against key in database.
             if (!_mfaCodeService.ValidateRecoveryCode(userAccount, recoveryKey))
             {
@@ -686,6 +775,13 @@ namespace RPG_Login_API.Services
             {
                 _logger.LogInformation($"Regenerate MFA recovery code failed: account for username stored in access token not found in database (username: {username})");
                 return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Regenerate MFA recovery code failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
             }
 
             // Generate full login response with newly-generated recovery code.
@@ -754,6 +850,23 @@ namespace RPG_Login_API.Services
         #endregion
 
         #region Private: Utility
+
+        /// <summary>
+        /// Checks whether the passed-in account is currently explicitly locked by the 'account locked
+        ///  until' time in the database.
+        /// </summary>
+        /// <param name="userAccount"> The account to check whether is currently locked. </param>
+        /// <returns> True if the account is currently locked, false otherwise. </returns>
+        private bool IsAccountCurrentlyLocked(UserAccountModel userAccount)
+        {
+            // Simply compare the 'account locked until' timestamp against the current time.
+            if (userAccount.AccountLockedUntil > DateTime.UtcNow)
+            {
+                return true;
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// Checks whether the given account has too many failed login attempts within the last five minutes. In

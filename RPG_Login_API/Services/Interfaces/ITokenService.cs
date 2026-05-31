@@ -12,6 +12,6 @@ namespace RPG_Login_API.Services.Interfaces
         public string GenerateAccessToken(string username, string role, double durationMinutes = 15);
 
         public bool TryReadRefreshToken(string tokenString, [NotNullWhen(true)] out string? username, out bool isFullAccess);
-        public bool ValidateToken(string token, string guid = "");
+        public bool ValidateToken(string submittedToken, string storedTokenHash, string guid = "");
     }
 }
