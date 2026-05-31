@@ -56,6 +56,9 @@ This endpoint is used to register (create) a new account. The user must submit a
 
 This endpoint simply logs out the user, retrieving the account data (like username) directly from the token. Server-side, the account's stored refresh token is removed from the database, disallowing further access token refreshing or refresh login; the user must explicitly log in again in order to access their account. While this endpoint returns 200 or 404, the logout process will almost always be performed without the user awaiting a response from this endpoint.
 
+### Forgot password
+*See **Basic Account Information Management** section for details about this endpoint. This endpoint is used not only for manual password reset, but for account recovery.*
+
 # Email Verification
 These endpoints are specifically for resending a confirmation code to the provided email for email verification, and actually verifying the email.
 
@@ -80,7 +83,7 @@ This endpoint is used specifically for resending a confirmation code to the user
 This endpoint is used to verify the email address for a given user's account. The user must submit their current access token along with the 8-character alphanumeric confirmation code that was sent to the email address associated with the account. If the code is valid, the API will set the 'is email verified' flag for the account in the database, then return a login response model noting that the account email is verified (will still require MFA setup for new account, otherwise should be full access for manual email change).
 
 # Basic Account Information Management
-These endpoints are for managing basic account information like username, email address, and password.
+These endpoints are for managing basic account information like username, email address, and password. The password reset endpoints are used for both account recovery AND manual password resetting.
 
 ### Change username
 - **Route:** */api/users/change-username*
@@ -92,7 +95,7 @@ These endpoints are for managing basic account information like username, email 
 
 The change username endpoint allows a fully-logged-in user to change their account username. Because usernames are not particularly security-related, the username can be changed at any time without requiring a re-login *and* the API can safely tell the user whether the desired new username is avaialble. This process is effectively a one-off request, so this endpoint should always return a login response with a full access token. The process will fail if the user attempts to change their username within 30 days of prior change.
 
-### Request email change (first manual email change step)
+### Request email change (email change process, step 1/4)
 - **Route:** */api/users/request-email-change*
 - **Method:** POST
 - **Accepts:** Nothing.
@@ -102,7 +105,7 @@ The change username endpoint allows a fully-logged-in user to change their accou
 
 This endpoint is used as the first step for the manual email change process, which simply sends a confirmation code to the currently-logged-in account's associated email address. Because the endpoint requires a full access token, the API can return whether the code was sent successfully. The user is expected to call the 'initiate email change' endpoint immediately afterward to submit the confirmation code and actually initiate the email change process. Only fully-logged in users can call this endpoint.
 
-### Initiate email change (actually begin manual email change process)
+### Initiate email change (email change process, step 2/4)
 - **Route:** */api/users/initiate-email-change*
 - **Method:** POST
 - **Accepts:** The short-duration 8-character alphanumeric confirmation code sent to the user's email address.
@@ -112,7 +115,7 @@ This endpoint is used as the first step for the manual email change process, whi
 
 This is the endpoint which actually initiate the email change process. It expects the confirmation code previously sent to the account's email address and will return a dedicated 'email change token' if the code is valid, which is used exclusively for the manual email change process (it is an access token which is only able to access the 'submit new email' and 'verify new email' endpoints). After initiating the email change process, the user is expected to call the 'submit new email' endpoint with the email change token as the next step. This endpoint is where the email change is rejected if the email was changed less than 30 days prior.
 
-### Submit new email (manual email change process)
+### Submit new email (manual email change process, step 3/4)
 - **Route:** */api/users/submit-new-email*
 - **Method:** POST
 - **Accepts:** The desired new email address for the account.
@@ -120,7 +123,37 @@ This is the endpoint which actually initiate the email change process. It expect
 - **Status codes:** 200 on success, 400 for missing or invalid email address in request, 401 for missing or invalid access token, 403 for account currently locked, 404 for no account found matching username in token, 409 for new email is the same as existing email.
 - **Authorization:** Requires specific 'email change token', which is an access token with the particular 'email change' role.
 
-This endpoint accepts the user's desired new email address for the account, and explicitly requires the email change token generated from the manual email change initiation endpoint. The API does not tell the user whether their submitted email address is available for security reasons (otherwise this endpoint could be used as a method to generating a list of in-use emails). If the email is valid and not in use, the API will internally store this pending new email within the user's account in the database and await its verification. After successfully submitting their desired new email, the user is expected to call the 'verify new email' endpoint with the same 'email change token' used for this endpoint, which will allow the API to update the account's current email. Note that this endpoint does NOT check whether the user's email was changed less than 30 days prior because the initiate endpoint performs this check; the user cannot receive the new 'email change token' in the first place if the initiate endpoint detects it is within 30 days of previous change.
+This endpoint accepts the user's desired new email address for the account, and explicitly requires the email change token generated from the manual email change initiation endpoint. The API does not tell the user whether their submitted email address is available for security reasons (otherwise this endpoint could be used as a method to generating a list of in-use emails). If the email is valid and not in use, the API will internally store this pending new email within the user's account in the database and await its verification. After successfully submitting their desired new email, the user is expected to call the 'verify new email' endpoint with the same 'email change token' used for this endpoint, which will allow the API to update the account's current email (the final step 4/4). Note that this endpoint does NOT check whether the user's email was changed less than 30 days prior because the initiate endpoint performs this check; the user cannot receive the new 'email change token' in the first place if the initiate endpoint detects it is within 30 days of previous change.
+
+### Forgot password (account recovery AND manual password reset process, step 1/3)
+- **Route:** */api/users/forgot-password*
+- **Method:** POST
+- **Accepts:** The username or email address of the account whose owner has forgotten the password for.
+- **Returns:** Nothing.
+- **Status codes:** 200 always for all internal logic reasons, 400 for invalid or missing username/email in request.
+- **Authorization:** Does not require access token (anonymous access).
+
+This endpoint serves *two* purposes: 1) it is used for account recovery when a user has forgotten their password, and 2) it is used as the first step for a fully-logged-in user to manually change their password. This endpoint does not require an access token because it must be accessible to users who don't have access to their account because they forgot this password, which also means that it cannot return details regarding whether the code was sent for security reasons (otherwise a malicious actor could use this endpoint to compile a list of emails which are in use). Server-side, the API tries to find an account matching the passed-in username or email address, sendign a code to the account's associated email address if it exists. The endpoint will always return 200 OK regardless of whether the account exists, with the only exception being a 400 Bad Request if the submitted username or email is invalid or missing. Regardless of whether for account recovery or manual change, the user is expected to call the 'initiate password reset' endpoint with the confirmation code sent to their email in order to progress the password reset process.
+
+### Initiate password reset (account recovery AND manual password reset process, step 2/3)
+- **Route:** */api/users/initiate-password-reset*
+- **Method:** POST
+- **Accepts:** The username or email address of the account the desired reset is for, and the 8-character alphanumeric confirmation code sent to this account's email address.
+- **Returns:** A specific 'password reset token' that is used exclusively for the password reset process.
+- **Status codes:** 200 on success, 400 for missing or invalid username/email in request *or* missing confirmation code in request, 401 for invalid or expired confirmation code *or* any other failure reason.
+- **Authorization:** Does not require access token (anonymous access).
+
+This endpoint initiates the password reset process, accepting a confirmation code and the username/email associated with the account that the confirmation code was sent to. Importantly, because this allows anonymous access, it must only ever return 401 "invalid confirmation code" in order to ensure that no additional account information is provided to anonymous users (for example, returning 403 on account locked could be used my a malicious actor to determine that the account exists). If the code is valid for the provided username/email, the API generates a specific 'password reset token' that's only purpose is to allow submitting a new password for the account, regardless of whether the context is account recovery or manual password reset. Once this token is received, the user is expected to call the 'submit new password' endpoint to complete the password reset process.
+
+### Submit new password (account recovery AND manual password reset process, step 3/3)
+- **Route:** */api/users/submit-new-password*
+- **Method:** POST
+- **Accepts:** The desired new password for the account.
+- **Returns:** Nothing.
+- **Status codes:** 200 on success, 400 for missing or invalid password in request, 403 for account currently locked, 404 for no account found matching username in token, 409 for new password is the same as old password, 422 for password found in list of compromised/insecure passwords, 493 for password cannot be reset with 24 hours of previous reset.
+- **Authorization:** Requires specific 'password reset token' that was received from the password reset initiation endpoint.
+
+This endpoint executes the password reset process on the server as the final step, updating the stored password hash in the database with the salted and hashed version of the user's submitted new password. The submitted password must be 8-64 characters and can include any readable character, but must include at least one uppercase letter, lowercase letter, digit, and symbol; additionally, it cannot be found in the list of 100,000 most-commonly-used (and thus highly insecure) passwords. If submission is successful, the user is *forcefully logged out on the server for security reasons*, and the client-side application should locally log the user out as well. This submission process will fail if the user attempts to change their password with 24 hours of a previous password reset.
 
 
 
