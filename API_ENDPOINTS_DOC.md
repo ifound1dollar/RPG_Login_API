@@ -1,6 +1,32 @@
 # Endpoint Documentation
 This documentation describes what each endpoint does, what data it accepts and returns, what status codes may be returned, what roles are allowed to access it, how the client should use it, what endpoints the client is expected to request afterward, and other various information that should be known about the endpoint. They are broken up into a few sections for readability: account access, email verification, basic information management, multi-factor authentication setup and management, and account state tracking. Note that all endpoints will return a 500 status code if an API error occurs, and will return a string error message if a 400/500 response.
 
+### Login response model
+The login response model used throughout the application follows a specific structure and includes a custom 'login status code' which describes the account state and consequently the access granted by the returned access token. In summary, this custom login code prioritizes persistent account status flags, like email not yet verified, account password needs reset for security reasons, and multi-factor authentication not yet setup. Only if these flags are good, does the response model return a proper 'success' state, which denotes whether it is a full login or whether the user must enter their MFA code.
+
+The response model structure is shown in the code block below. The login status codes are:
+- 10: email not yet verified (initial account creation, step 1)
+- 20: password needs reset for security reasons (requires change after suspicious activity)
+- 30: multi-factor authentication not yet setup (initial account creation, step 2)
+- 1: login successful but awaiting MFA code submission (login successful with credentials but MFA code needs to be submitted)
+- 0: login successful with full access (login successful with valid MFA code submitted)
+```
+    public string Username { get; set; }
+    public string Email { get; set; }
+    public int LoginStatusCode { get; set; }
+    public string RefreshToken { get; set; }
+    public string AccessToken { get; set; }
+    public DateTime AccessTokenExpiration { get; set; }
+```
+
+### Other response models
+- Email change token response model includes only a string, which contains the short-duration email change token.
+- Password reset token response model includes only a string, which contains the short-duration password reset token.
+- MFA setup response model also includes only a string, where the string is a time-based one-time-password URI to be generated into a QR code and used for authenticator app setup.
+- MFA recovery code response model returns the exact same data as the login response model, plus an additional string which contains the 24-character hexadecimal MFA recovery code.
+
+---
+
 # Account Access
 These endpoints are concerned with account login, registration, and logout.
 
@@ -59,6 +85,8 @@ This endpoint simply logs out the user, retrieving the account data (like userna
 ### Forgot password
 *See **Basic Account Information Management** section for details about this endpoint. This endpoint is used not only for manual password reset, but for account recovery.*
 
+---
+
 # Email Verification
 These endpoints are specifically for resending a confirmation code to the provided email for email verification, and actually verifying the email.
 
@@ -81,6 +109,8 @@ This endpoint is used specifically for resending a confirmation code to the user
 - **Authorization:** Requires access token with 'email not verified' role (initial account setup) or 'email change' role (specific to email change token).
 
 This endpoint is used to verify the email address for a given user's account. The user must submit their current access token along with the 8-character alphanumeric confirmation code that was sent to the email address associated with the account. If the code is valid, the API will set the 'is email verified' flag for the account in the database, then return a login response model noting that the account email is verified (will still require MFA setup for new account, otherwise should be full access for manual email change).
+
+---
 
 # Basic Account Information Management
 These endpoints are for managing basic account information like username, email address, and password. The password reset endpoints are used for both account recovery AND manual password resetting.
@@ -155,6 +185,8 @@ This endpoint initiates the password reset process, accepting a confirmation cod
 
 This endpoint executes the password reset process on the server as the final step, updating the stored password hash in the database with the salted and hashed version of the user's submitted new password. The submitted password must be 8-64 characters and can include any readable character, but must include at least one uppercase letter, lowercase letter, digit, and symbol; additionally, it cannot be found in the list of 100,000 most-commonly-used (and thus highly insecure) passwords. If submission is successful, the user is *forcefully logged out on the server for security reasons*, and the client-side application should locally log the user out as well. This submission process will fail if the user attempts to change their password with 24 hours of a previous password reset.
 
+---
+
 # Multi-factor Authentication Setup and Management
 These endpoints are used for setting up multi-factor authentication and managing the current MFA configuration.
 
@@ -200,7 +232,27 @@ This endpoint is used only for when a user has successfully logged in with their
 
 This endpoint is used by fully-logged-in users to regenerate the current MFA recovery code for the active MFA configuration. This allows users who may have lost their current MFA recovery code to generate a new one, granted that they have access to the current MFA configuration (required to fully log in). This endpoint returns the same data as the 'verify MFA setup' endpoint, which should be a full-access login response model with the newly-generated 24-character hexadecimal MFA recovery code; the only time the login response model will be non-full-access is if the account state somehow changes during the regeneration process. Server-side, the API simply replaces the account's existing salted and hashed MFA recovery code with the newly salted and hashed one.
 
+---
 
+# Account State Tracking (Launcher)
+These methods are used for notifying the API that the user is currently actively logged into the launcher, and notifying when the user exits the launcher application.
 
+### Ping in launcher
+- **Route:** */api/users/ping-in-launcher*
+- **Method:** POST
+- **Accepts:** Nothing.
+- **Returns:** Nothing.
+- **Status codes:** 204 on success, 404 for no account found matching username in token.
+- **Authorization:** Requires access token with 'full access' role.
 
+This endpoint is used simply to notify the API that this account is currently logged in with the launcher application open. Server-side, it sets a flag in the database to denote that the account is 'in launcher' and writes the exact time that this endpoint was called. This is used purely for informational purposes. The client application should call this endpoint at a fixed interval while active and fully-logged-in, preferably once per minute.
 
+### Notify launcher exit
+- **Route:** */api/users/notify-launcher-exit*
+- **Method:** POST
+- **Accepts:** Nothing.
+- **Returns:** Nothing.
+- **Status codes:** 204 on success, 404 for no account found matching username in token.
+- **Authorization:** Requires access token with 'full access' role.
+
+This endpoint, similar to ping in launcher, is used exclusively for account tracking. It allows the client application to notify the API the moment that the launcher application closes, allowing the API to update the user account's stored state in the database. Likewise, this is used purely for informational purposes. The client application should call this endpoint on launcher close, immediately before the application fully exits.

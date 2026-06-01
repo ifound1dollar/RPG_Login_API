@@ -303,7 +303,7 @@ namespace RPG_Login_API.Controllers
 
 
 
-        [Authorize(Roles = TokenService.Roles.AwaitingMfa + "," + TokenService.Roles.FullAccess)]
+        [Authorize(Roles = TokenService.Roles.AwaitingMfa)]
         [Route("recover-mfa")]
         [HttpPost]
         public async Task<ActionResult> UserRecoverMfa(RecoverMfaRequestModel request)

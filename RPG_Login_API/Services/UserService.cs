@@ -308,16 +308,7 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: GENERATE LOGIN RESPONSE | On successful email verification, re-generate both refresh and access token (like login).
-            bool isFullAccess = (!isForNewAccount);     // New account means MFA not set up (no full access), otherwise existing has full access.
-            var response = new LoginResponseModel()
-            {
-                Username = userAccount.Username,
-                Email = targetEmail,
-                LoginStatusCode = 0,        // Always full success status after successful verification.
-                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, isFullAccess, durationDays: 30),
-                AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
-                AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
-            };
+            var response = GenerateLoginResponse(userAccount, isForNewAccount); // Is initial login step for new account, else full access is full login.
 
             // UPDATE DATABASE | After token generation, update account document.
             userAccount.Email = targetEmail;                    // Target email will be existing email OR pending new email, depending on context.
@@ -512,15 +503,7 @@ namespace RPG_Login_API.Services
             }
 
             // RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens with new username.
-            var response = new LoginResponseModel()
-            {
-                Username = newUsername,
-                Email = userAccount.Email,
-                LoginStatusCode = 0,        // This endpoint can only be accessed by a full-access token, so make full access again.
-                RefreshToken = _tokenService.GenerateRefreshToken(newUsername, isFullAccess: true, durationDays: 30),
-                AccessToken = _tokenService.GenerateAccessToken(newUsername, TokenService.Roles.FullAccess, durationMinutes: 15),
-                AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
-            };
+            var response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
 
             // UPDATE DOCUMENT AND DATABASE | Update username and last username changed time in document, then update database.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
@@ -713,15 +696,16 @@ namespace RPG_Login_API.Services
             }
 
             // Else request is valid, so generate full login response with recovery code.
+            var loginResponse = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
             var response = new MfaRecoveryCodeResponseModel
             {
-                RecoveryCode = _mfaCodeService.GenerateMfaRecoveryCode(),
-                Username = userAccount.Username,
-                Email = userAccount.Email,
-                LoginStatusCode = 0,
-                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, isFullAccess: true, durationDays: 30),
-                AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
-                AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
+                RecoveryCode = _mfaCodeService.GenerateMfaRecoveryCode(),   // Generate new here.
+                Username = loginResponse.Username,
+                Email = loginResponse.Email,
+                LoginStatusCode = loginResponse.LoginStatusCode,
+                RefreshToken = loginResponse.RefreshToken,
+                AccessToken = loginResponse.AccessToken,
+                AccessTokenExpiration = loginResponse.AccessTokenExpiration
             };
 
             // Move pending MFA key to active, then update database with new MFA recovery code hash and refresh token hash.
@@ -790,15 +774,16 @@ namespace RPG_Login_API.Services
             }
 
             // Generate full login response with newly-generated recovery code.
+            var loginResponse = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
             var response = new MfaRecoveryCodeResponseModel
             {
                 RecoveryCode = _mfaCodeService.GenerateMfaRecoveryCode(),   // Generate new here.
-                Username = userAccount.Username,
-                Email = userAccount.Email,
-                LoginStatusCode = 0,
-                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, isFullAccess: true, durationDays: 30),
-                AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.FullAccess, durationMinutes: 15),
-                AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
+                Username = loginResponse.Username,
+                Email = loginResponse.Email,
+                LoginStatusCode = loginResponse.LoginStatusCode,
+                RefreshToken = loginResponse.RefreshToken,
+                AccessToken = loginResponse.AccessToken,
+                AccessTokenExpiration = loginResponse.AccessTokenExpiration
             };
 
             // Update database with new MFA recovery code hash and refresh token hash.

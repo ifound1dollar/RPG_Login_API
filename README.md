@@ -37,6 +37,10 @@ ASP.NET Core implements a robust logging system by default, and this system is u
 
 The API is only accessible by clients via TLS-secured HTTPS communication. ASP.NET handles this configuration automatically, given that launchSettings.json is configured to remove the HTTP profile. Currently, a self-signed certificate is being used to facilitate TLS, though this will need to be a valid third-party CA signed certificate in the future.
 
+### Rate limiting
+
+The API also implements strict per-IP rate limiting to help defend against brute-force or denial-of-service attacks. The current configuration allows 10 requests per minute per IP, using a sliding window approach with 3 segments per window (3 seems to be standard). The rate limiter disallows queueing if the limit is hit, meaning it is a hard-enforced rate limit that will indiscriminately prevent any request that exceeds the limit. This rate limiter will be applied to all controllers in the application.
+
 ### Generic API responses and timing for sensitive endpoints
 
 API endpoints which are accessible to anonymous (unauthorized) users are designed to not reveal detailed information which could be abused by a malicious actor. For instance, the login, register, send confirmation code, and forgot password endpoints interact directly with user accounts and are accessible by unauthorized users (naturally). If these endpoints revealed sensitive information like whether an account exists for the submitted email, a malicious actor could use this information to generate a list of emails which are in use (this in turn could be a tool used to phish known emails). Instead, these endpoints *do not* reveal any sensitive info but rather return generic responses that cannot be used to scrape for existing accounts. Some endpoints may not even return whether success or failure (ex. 'send confirmation code to email', which is used for 'forgot password' functionality, always returns 200 OK to avoid revealing whether the account exists).
