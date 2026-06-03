@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Org.BouncyCastle.Security;
 using RPG_Login_API.Configuration;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
@@ -141,6 +142,21 @@ namespace RPG_Login_API.Services
                 return false;
             }
 
+        }
+
+        #endregion
+
+        #region (Interface) Public: Game Token Generation
+
+        public string GenerateGameConnectToken(string username)
+        {
+            // Simply generate a 256-bit secure random.
+            var secureRandom = new SecureRandom();
+
+            byte[] key = new byte[32];
+            secureRandom.NextBytes(key);
+
+            return Convert.ToBase64String(key);
         }
 
         #endregion

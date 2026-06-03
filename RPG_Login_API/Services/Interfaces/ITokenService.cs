@@ -13,5 +13,12 @@ namespace RPG_Login_API.Services.Interfaces
 
         public bool TryReadRefreshToken(string tokenString, [NotNullWhen(true)] out string? username, out bool isFullAccess);
         public bool ValidateToken(string submittedToken, string storedTokenHash, string guid = "");
+
+        /// <summary>
+        /// Generates a unique 256-bit connect token for the provided user. Returns in base64 string form.
+        /// </summary>
+        /// <param name="username"> The user to generate the connect token for. </param>
+        /// <returns> The generated 256-bit connect token as a base64 string. </returns>
+        public string GenerateGameConnectToken(string username);
     }
 }

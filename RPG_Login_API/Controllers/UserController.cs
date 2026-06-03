@@ -339,6 +339,26 @@ namespace RPG_Login_API.Controllers
 
         #endregion
 
+        #region Public: User play game logic
+
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only fully-logged-in can play the game.
+        [Route("play-game")]
+        [HttpPost]
+        public async Task<ActionResult> UserPlayGame()
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client ping in launcher failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, object? response) = await _service.UserPlayGameAsync(username);
+            return StatusCode(code, response);
+        }
+
+        #endregion
+
         #region Public: Client account state tracking
 
         [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only considered in launcher if logged in with full access.
@@ -375,9 +395,11 @@ namespace RPG_Login_API.Controllers
 
         #endregion
 
-        #region Private: Utility
 
-        private bool TryReadAccessTokenData(ClaimsPrincipal user, [NotNullWhen(true)] out string? username,
+
+        #region Private Static: Utility
+
+        private static bool TryReadAccessTokenData(ClaimsPrincipal user, [NotNullWhen(true)] out string? username,
             [NotNullWhen(true)] out string? role, [NotNullWhen(true)] out string? guid)
         {
             username = user.Identity?.Name;                                 // UniqueName maps directly to Identity.Name.

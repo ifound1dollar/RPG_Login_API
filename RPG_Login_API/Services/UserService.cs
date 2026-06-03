@@ -797,6 +797,38 @@ namespace RPG_Login_API.Services
 
         #endregion
 
+        #region Public: Play game logic and token generation
+
+        public async Task<(int, object?)> UserPlayGameAsync(string username)
+        {
+            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Play game failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE USER IS NOT ALREADY IN GAME | Check whether the 'online' flag is set, and ensure it is not a zombie.
+            if (userAccount.OnlineStatus && (DateTime.UtcNow - userAccount.LastOnlineTime < TimeSpan.FromMinutes(3)))
+            {
+                // If is flagged online and has an online ping in the last 3 minutes, then the account is definitely online.
+                _logger.LogInformation($"Play game failed: account is already online (username: {username}, last online time: {userAccount.LastOnlineTime.ToShortTimeString()})");
+                return (409, "User account is already logged-in and in game.");
+            }
+
+            // VALID TO PLAY: GENERATE CONNECT TOKEN | Generate a 256-bit unique token for this user.
+            string connectTokenBase64 = _tokenService.GenerateGameConnectToken(username);
+
+            // SEND CONNECT TOKEN TO ONLINE SERVICE | Send token to the online service so it can accept the new player.
+            await Task.Delay(500);  // TEMP DELAY FOR SIMULATION
+
+            _logger.LogInformation($"Play game successful (username: {username})");
+            return (200, connectTokenBase64);
+        }
+
+        #endregion
+
         #region Public: User account online status tracking
 
         public async Task<(int, object?)> UserPingInLauncherAsync(string username)
