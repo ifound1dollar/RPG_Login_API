@@ -1,0 +1,6 @@
+services:
+  rpg_login_api:
+    image: ${DOCKER_REGISTRY-}rpgloginapi
+    build:
+      context: .
+      dockerfile: RPG_Login_API/Dockerfile

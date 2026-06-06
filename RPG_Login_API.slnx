@@ -6,5 +6,8 @@
     <File Path="API_OVERVIEW_DOC.md" />
     <File Path="README.md" />
   </Folder>
+  <Project Path="docker-compose.dcproj">
+    <Build />
+  </Project>
   <Project Path="RPG_Login_API/RPG_Login_API.csproj" />
 </Solution>
