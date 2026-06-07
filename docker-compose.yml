@@ -4,3 +4,9 @@ services:
     build:
       context: .
       dockerfile: RPG_Login_API/Dockerfile
+    networks:
+      - network-rpg-login-api
+
+networks:
+  network-rpg-login-api:
+    name: network-rpg-login-api

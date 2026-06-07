@@ -1,11 +1,31 @@
 # We remove ASPNETCORE_HTTP_PORTS environment command and the associated port in order to force TLS-only communication.
 services:
   rpg_login_api:
+    # ENVIRONMENT FILES COME FROM THE .env FILE IN THE SAME DIRECTORY AS THIS YAML FILE.
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_HTTPS_PORTS=8081
+      # REMOVED 'ASPNETCORE_HTTP_PORTS=8080' BECAUSE WE DO NOT SUPPORT NON-TLS API ACCESS
+      
+      # Token settings
+      - TokenSettings__JwtKey=${JWT_TOKEN_KEY}
+      
+      # MFA service settings
+      - MfaServiceSettings__Issuer=${MFA_ISSUER_NAME}
+      - MfaServiceSettings__Base64Key=${MFA_BASE_64_KEY}
+      
+      # Email service settings
+      - EmailServiceSettings__EmailAddress=${EMAIL_SERVICE_EMAIL_ADDRESS}
+      - EmailServiceSettings__AppPassword=${EMAIL_SERVICE_APP_PASSWORD}
+      
+      # Database settings
+      - DatabaseSettings__UserAccountsCollectionName=${MONGO_USER_ACCOUNTS_COLLECTION_NAME}
+      - DatabaseSettings__DatabaseName=${MONGO_DATABASE_NAME}
+      - DatabaseSettings__ConnectionString=${MONGO_CONNECTION_STRING}
     ports:
+      # Expose externally on port 7127, internally on same port as ASPNETCORE_HTTPS_PORTS above.
       - "7127:8081"
+      # REMOVED 8080 PORT BECAUSE WE DO NOT SUPPORT NON-TLS API ACCESS
     volumes:
       - ${APPDATA}/Microsoft/UserSecrets:/home/app/.microsoft/usersecrets:ro
       - ${APPDATA}/Microsoft/UserSecrets:/root/.microsoft/usersecrets:ro
