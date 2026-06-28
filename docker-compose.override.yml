@@ -1,11 +1,13 @@
 # We remove ASPNETCORE_HTTP_PORTS environment command and the associated port in order to force TLS-only communication.
 services:
-  rpg_login_api:
+  rpg-login-api:
     # ENVIRONMENT FILES COME FROM THE .env FILE IN THE SAME DIRECTORY AS THIS YAML FILE.
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ASPNETCORE_HTTPS_PORTS=8081
-      # REMOVED 'ASPNETCORE_HTTP_PORTS=8080' BECAUSE WE DO NOT SUPPORT NON-TLS API ACCESS
+      - ASPNETCORE_HTTP_PORTS=8080
+      # - ASPNETCORE_HTTPS_PORTS=8081
+      # Re-added ASPNETCORE_HTTP_PORTS=8080 to allow Cloudflare Tunnel to access without TLS.
+      # Removed 8081 HTTPS port because cloudflare would try to reroute all traffic from 8080 to 8081, which failed.
       
       # Token settings
       - TokenSettings__JwtKey=${JWT_TOKEN_KEY}
@@ -24,10 +26,15 @@ services:
       - DatabaseSettings__ConnectionString=${MONGO_CONNECTION_STRING}
     ports:
       # Expose externally on port 7127, internally on same port as ASPNETCORE_HTTPS_PORTS above.
-      - "7127:8081"
-      # REMOVED 8080 PORT BECAUSE WE DO NOT SUPPORT NON-TLS API ACCESS
+      # - "7127:8081"
+      - "7127:8080"
+      # REMOVED PUBLICLY-ACCESSIBLE 8080 PORT BECAUSE WE DO NOT SUPPORT NON-TLS API ACCESS
     volumes:
       - ${APPDATA}/Microsoft/UserSecrets:/home/app/.microsoft/usersecrets:ro
       - ${APPDATA}/Microsoft/UserSecrets:/root/.microsoft/usersecrets:ro
       - ${APPDATA}/ASP.NET/Https:/home/app/.aspnet/https:ro
       - ${APPDATA}/ASP.NET/Https:/root/.aspnet/https:ro
+  cloudflared:
+    # ENVIRONMENT VARIABLES COME FROM THE .env FILE IN THE SAME DIRECTORY AS THIS YAML FILE.
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}

@@ -3,8 +3,11 @@
     "Docker Compose": {
       "commandName": "DockerCompose",
       "commandVersion": "1.0",
+      "composeLaunchAction": "None",
+      "composeLaunchServiceName": "rpg-login-api",
       "serviceActions": {
-        "rpg_login_api": "StartDebugging"
+        "cloudflared": "StartWithoutDebugging",
+        "rpg-login-api": "StartDebugging"
       }
     }
   }

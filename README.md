@@ -29,7 +29,7 @@ Currently, MongoDB is the database solution used to store account data. This lev
 
 ASP.NET Core implements a robust logging system by default, and this system is used throughout the API. At the moment, only console logging is being used (this can be extended to support third-party libraries in the future). The built-in ILogger<> interface is passed via DI into each service and controller, abstracting any lower-level logging behavior from API development entirely. Methods like LogInformation() and LogError() can be easily called using the ILogger<> object. The application's *appsettings.json* file allows configuring the minimum log level that will be actually written/printed. By default, Information is the minimum for generic logging, whereas Warning is the default for ASP.NET logging (?).
 
-### Containerization with Docker
+### Containerization with Docker (+ Compose)
 
 The application utilizes Docker for containerization, which allows the application to be built and published for platform-agnostic use; it also enables easily injecting environment variables into the application without requiring the use of the User Secrets system (see the **environment variables with Docker** section below for details on this). Visual Studio was used to automatically generate and configure the basic Dockerfile and docker-compose.yml setup (*Add -> Container Compose Support*), though they were each modified to support the application's desired behavior. For instance, the HTTP (non-TLS) configuration was removed from both the Dockerfile and docker-compose.override.yml, disallowing access without TLS. Additionally, the docker-compose.override.yml file was updated to include various environment variables which are pulled from the .env file, which is expected to reside in the same directory as the compose.yml file (see below).
 
@@ -38,17 +38,40 @@ Building the application ultimately remains the same as it was before, but now e
 
 After the container is running, the container can be viewed using Docker Desktop. The external:internal port that the application is running on is visible in the Containers overview, with external port being the port in which the application can be accessed using. For all practical purposes, the API is accessible in the same way as it would be if it were not containerized. A client's HttpClient can directly make API calls to the IP:PORT (ex. localhost:7127) without issue.
 
+### Public access with Cloudflare Tunnel
+
+The running application inside Docker Compose is publicly accessible using Cloudflare Tunnel, which routes incoming traffic through a custom domain managed by Cloudflare directly to the locally-running instance. The Docker Compose configuration includes a cloudflare daemon (cloudflared) tunnel image which runs alongside the API container within the same network, allowing direct communication between the tunnel and the API. Note that because this is direct communication within an isolated Docker Compose network, the API does not (and should not) need to run on HTTPS (see **secure communication over HTTPS** section below). This Docker Compose configuration allows the application to connect to *any* Cloudflare Tunnel as long as the unique token associated with the tunnel is provided to the container via an environment variable (CLOUDFLARE_TUNNEL_TOKEN in .env.example); a valid token allows the tunnel image to directly connect to the Cloudflare Tunnel.
+
+Managing routing and domains is done outside the context of this application. A domain must be purchased somewhere (ex. namecheap), while the tunnel itself must be created and managed through the Cloudflare Dashboard. The tunnel must then be configured with routes that point to the running application in Docker Compose, with one tunnel per unique subdomain (ex. example.com or api.example.com).
+* **IMPORTANT:** The locally-running server pointed to in the tunnel route cannot use 'localhost' when running in an isolated Docker Compose network; instead, the local address must use the API container definition name within the docker-compose.yml file. For instance, the definition name for the API is 'rpg-login-api' and runs on internal HTTP port 8080, meaning that the local server address string in the tunnel route must be 'http://rpg-login-api:8080'.
+
+**Cloudflare configuration:**
+* Domain authority w/DNS records (one-to-one tunnel:record)
+* Tunnel + routing (one route per subdomain, ex. www.* or accounts.*)
+* Automatic HTTPS/TLS (Flexible mode for non-TLS between Tunnel and API)
+* DNSSEC (configured by Cloudflare and submitted to domain registrar)
+* Universal rate limiting (entire domain)
+* Bot management (Bot Fight Mode to prevent AI bots)
+
 ---
 
 # Security
 
-### Secure communication over HTTPS
+### HTTPS and Cloudflare security settings
 
-The API is only accessible by clients via TLS-secured HTTPS communication. ASP.NET handles this configuration automatically, given that launchSettings.json is configured to remove the HTTP profile. Currently, a self-signed certificate is being used to facilitate TLS, though this will need to be a valid third-party CA signed certificate in the future.
+~~The API is only accessible by clients via TLS-secured HTTPS communication. ASP.NET handles this configuration automatically, given that launchSettings.json is configured to remove the HTTP profile. Currently, a self-signed certificate is being used to facilitate TLS, though this will need to be a valid third-party CA signed certificate in the future.~~
 
-### Rate limiting
+* **CORRECTION:** Because the application is published using Cloudflare Tunnel using an internal Docker Compose network, the API now runs only on HTTP (non-TLS) locally. Cloudflare managing its own SSL/TLS certificates for the tunnel, automatically enforcing HTTPS for all public traffic which is routed through the Tunnel to the running network within Docker Compose. Communication between the tunnel and the API within the network is safe using HTTP because it is an internal isolated network that is inaccessible to anyone but the local machine. This also means local testing (via localhost) does not support HTTPS, but the API should never been manually exposed locally without Cloudflare Tunnel.
 
-The API also implements strict per-IP rate limiting to help defend against brute-force or denial-of-service attacks. The current configuration allows 10 requests per minute per IP, using a sliding window approach with 3 segments per window (3 seems to be standard). The rate limiter disallows queueing if the limit is hit, meaning it is a hard-enforced rate limit that will indiscriminately prevent any request that exceeds the limit. This rate limiter will be applied to all controllers in the application.
+In addition to HTTPS-only communication through Cloudflare, the domain is configured to defend against bots, denial-of-service attacks, and spoofing/cache poisoning. Cloudflare includes a handful of robust built-in defense measures, as well as DNSSEC to prevent spoofing / cache poisoning specifically. The DNSSEC configuration is generated automatically by Cloudflare, but this generated data must be provided to the domain registrar (if not Cloudflare) to complete the 'cryptographic chain of trust'. 
+
+### Rate limiting (Cloudflare and locally)
+
+The domain managed by Cloudflare is configured with universal rate limiting on a per-IP basis, acting as a general first line of defense for brute-force or denial-of-service attacks. This rate limiter will block traffic on Cloudflare's end, preventing excess traffic from reaching the server at all. By default, this is configured for one-request-per-second (10 requests per 10 seconds, technically) for all endpoints on the domain.
+
+The API also implements strict per-IP rate limiting to act as a second layer of defense against brute-force or denial-of-service attacks. This configuration allows 10 requests per minute per IP, using a sliding window approach with 3 segments per window (3 seems to be standard). The rate limiter disallows queueing if the limit is hit, meaning it is a hard-enforced rate limit that will indiscriminately prevent any request that exceeds the limit. This rate limiter will be applied to all controllers in the application.
+
+* **IMPORTANT:** Cloudflare Tunnel routes all requests through a local connection IP loopback (127.0.0.1 or ::1), at least as far as the API can tell by default. This means that combined traffic might hit the rate limiter very easily, which will then erroneously lock out every single client for the sliding window duration. To solve this, Forwarded Headers must be configured to retrieve the actual request's IP address from the Cloudflare Tunnel proxies. This includes defining the types of forwarded headers to support (XForwardedFor and XForwardedProto), then removing all default network/proxies that are generated by default (Cloudflare Tunnel forwards requests locally without the need for these defaults). Forwarded headers are configured on application build within Program.cs.
 
 ### Generic API responses and timing for sensitive endpoints
 

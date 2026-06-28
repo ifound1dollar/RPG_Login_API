@@ -1,12 +1,24 @@
 services:
-  rpg_login_api:
+  rpg-login-api:
     image: ${DOCKER_REGISTRY-}rpgloginapi
+    container_name: rpg-login-api
+    restart: unless-stopped
     build:
       context: .
       dockerfile: RPG_Login_API/Dockerfile
     networks:
       - network-rpg-login-api
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest 
+    container_name: tunnel-rpg-login-api
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    depends_on:
+      - rpg-login-api
+    networks:
+      - network-rpg-login-api
+
 networks:
   network-rpg-login-api:
-    name: network-rpg-login-api
+    driver: bridge

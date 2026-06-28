@@ -1,6 +1,7 @@
 
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using RPG_Login_API.Configuration;
 using RPG_Login_API.Services;
@@ -65,6 +66,17 @@ namespace RPG_Login_API
             builder.Services.AddExceptionHandler<UniversalExceptionHandler>();
             builder.Services.AddProblemDetails();
 
+            // IMPORTANT: Configure Forwarded Headers to trust Cloudflare Tunnel proxies (all tunnel request raw IPs will be
+            //  the same, so we must use forwarded headers to actually get the real IP address from Cloudflare Tunnel).
+            builder.Services.Configure<ForwardedHeadersOptions>(options =>
+            {
+                options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+                // Cloudflare Tunnel forwards requests locally, so clear default network/proxy restrictions.
+                options.KnownNetworks.Clear();
+                options.KnownProxies.Clear();
+            });
+
             // Add per-IP rate limiter. https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit?view=aspnetcore-7.0#sliding-window-limiter
             builder.Services.AddRateLimiter(options =>
             {
@@ -107,6 +119,7 @@ namespace RPG_Login_API
                 app.UseSwaggerUI();
             }
 
+            app.UseForwardedHeaders();      // Use our forwarded headers, required for accessing IPs from Cloudflare Tunnel.
             app.UseRateLimiter();           // Use our defined rate limiter above.
             app.UseExceptionHandler();      // Use our custom exception handler added above.
 
