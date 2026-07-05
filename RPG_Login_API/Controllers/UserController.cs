@@ -15,7 +15,7 @@ namespace RPG_Login_API.Controllers
     [EnableRateLimiting("IpLimitPolicy")]   // Limit requests from any specific IP.
     [Authorize]             // Denotes that all requests BY DEFAULT require JWT token authentication (passed in the HTTP request).
                             //  The token passed to the controller must be the access token. Refresh token is handled manually.
-    [Route("api/users")]    // Makes all endpoints begin with "[URL]/api/users"; endpoint methods below define suffixes.
+    [Route("users")]    // Makes all endpoints begin with "[URL]/users"; endpoint methods below define suffixes.
     [ApiController]
     public class UserController : Controller
     {

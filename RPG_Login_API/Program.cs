@@ -15,7 +15,7 @@ namespace RPG_Login_API
 {
     public class Program
     {
-        public static bool IsDevelopment { get; } = true;
+        public static bool IsDevelopment { get; } = false;
 
         public static void Main(string[] args)
         {
@@ -128,7 +128,7 @@ namespace RPG_Login_API
             app.UseAuthorization();
 
             // Map a basic ping method to check whether API is online, then map our actual controllers.
-            app.MapGet("/api/ping", () => { return Results.Ok(); } );
+            app.MapGet("/ping", () => { return Results.Ok(); } );
             app.MapControllers();
 
             app.Run();
