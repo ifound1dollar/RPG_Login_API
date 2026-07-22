@@ -32,25 +32,49 @@ namespace RPG_Login_API.Services
                 + ChangeEmail + "," + AwaitingMfa + "," + FullAccess;
         }
 
-        private readonly byte[] _jwtKey;
+        private readonly byte[] _jwtKeyBytes;
+        private readonly string _issuer;
+        private readonly string _audience;
         private readonly TokenValidationParameters _validationParameters;
         private readonly JwtSecurityTokenHandler _handler;
         private readonly ILogger _logger;
 
         public TokenService(IOptions<TokenSettings> settings, ILogger<TokenService> logger)
         {
-            _jwtKey = Encoding.UTF8.GetBytes(settings.Value.JwtKey);
+            // The following items pulled from settings should never be null or empty (validated on startup).
+            _jwtKeyBytes = Encoding.UTF8.GetBytes(settings.Value.JwtKey);
+            _issuer = settings.Value.Issuer;
+            _audience = settings.Value.Audience;
+
+            // Create handler instance and store logger reference.
             _handler = new();
             _logger = logger;
 
             // IMPORTANT: These validation parameters must match the parameters in Program.cs.
             _validationParameters = new()
             {
-                ValidateIssuer = false,
-                ValidateAudience = false,
+                // Configure issuer and audience from configuration data.
+                ValidateIssuer = true,
+                ValidIssuer = _issuer,
+                ValidateAudience = true,
+                ValidAudience = _audience,
+
+                // Configure signature verification using our secure JWT key.
                 ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(_jwtKey),
-                RoleClaimType = ClaimTypes.Role     // Configure the [Authorize] behavior in Controllers to use Roles.
+                IssuerSigningKey = new SymmetricSecurityKey(_jwtKeyBytes),
+
+                // Configure lifetime and expiration settings, enforcing token duration.
+                ValidateLifetime = true,
+                RequireExpirationTime = true,
+
+                // Configure the [Authorize] behavior in Controllers to use Role claims.
+                RoleClaimType = ClaimTypes.Role,
+
+                // Configure to only allow SHA256 algorithm.
+                ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+
+                // Configure time skew to allow only a small grace period for time discrepancy.
+                ClockSkew = TimeSpan.FromSeconds(30)
             };
         }
 
@@ -71,7 +95,9 @@ namespace RPG_Login_API.Services
                     new Claim(ClaimTypes.Role, role)                            // Allows MFA skip on refresh login if full access.
                 ]),
                 Expires = DateTime.UtcNow.AddDays(durationDays),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_jwtKey), SecurityAlgorithms.HmacSha256Signature)
+                Issuer = _issuer,
+                Audience = _audience,
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_jwtKeyBytes), SecurityAlgorithms.HmacSha256Signature)
             };
 
             var token = _handler.CreateToken(tokenDescriptor);
@@ -89,7 +115,9 @@ namespace RPG_Login_API.Services
                     new Claim(ClaimTypes.Role, role)                                    // Store user permission in token.
                 ]),
                 Expires = DateTime.UtcNow.AddMinutes(durationMinutes),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_jwtKey), SecurityAlgorithms.HmacSha256Signature)
+                Issuer = _issuer,
+                Audience = _audience,
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_jwtKeyBytes), SecurityAlgorithms.HmacSha256Signature)
             };
 
             var token = _handler.CreateToken(tokenDescriptor);

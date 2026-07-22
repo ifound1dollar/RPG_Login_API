@@ -10,5 +10,7 @@ namespace RPG_Login_API.Configuration
     public class TokenSettings
     {
         public string JwtKey { get; set; } = null!;
+        public string Issuer { get; set; } = null!;
+        public string Audience { get; set; } = null!;
     }
 }

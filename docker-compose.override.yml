@@ -11,6 +11,8 @@ services:
       
       # Token settings
       - TokenSettings__JwtKey=${JWT_TOKEN_KEY}
+      - TokenSettings__Issuer=${JWT_TOKEN_ISSUER}
+      - TokenSettings__Audience=${JWT_TOKEN_AUDIENCE}
       
       # MFA service settings
       - MfaServiceSettings__Issuer=${MFA_ISSUER_NAME}

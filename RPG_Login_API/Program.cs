@@ -140,23 +140,47 @@ namespace RPG_Login_API
             var tokenSettings = new TokenSettings();
             section.Bind(tokenSettings);
 
-            // Read JWT key from TokenSettings and ensure validity.
+            // Retrieve and validate usable configuration data from TokenSettings.
             var jwtKey = tokenSettings.JwtKey;
-            if (jwtKey == null)
+            if (string.IsNullOrEmpty(jwtKey))
             {
                 Console.WriteLine("[ERROR] Startup: Failed to retrieve authentication JWT token key. Exiting.");
                 Environment.Exit(1);
             }
+            byte[] jwtKeyBytes = Encoding.UTF8.GetBytes(jwtKey);
+            var issuer = tokenSettings.Issuer;
+            var audience = tokenSettings.Audience;
+            if (string.IsNullOrEmpty(issuer) || string.IsNullOrEmpty(audience))
+            {
+                Console.WriteLine("[ERROR] Startup: Failed to retrieve issuer or audience from JWT configuration. Exiting.");
+                Environment.Exit(1);
+            }
 
             // Use JWT key to create token validation parameters.
-            byte[] jwtKeyBytes = Encoding.UTF8.GetBytes(jwtKey);
             TokenValidationParameters parameters = new()
             {
-                ValidateIssuer = false,
-                ValidateAudience = false,
+                // Configure issuer and audience from configuration data.
+                ValidateIssuer = true,
+                ValidIssuer = issuer,
+                ValidateAudience = true,
+                ValidAudience = audience,
+
+                // Configure signature verification using our secure JWT key.
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(jwtKeyBytes),
-                RoleClaimType = ClaimTypes.Role     // Configure the [Authorize] behavior in Controllers to use Roles.
+
+                // Configure lifetime and expiration settings, enforcing token duration.
+                ValidateLifetime = true,
+                RequireExpirationTime = true,
+
+                // Configure the [Authorize] behavior in Controllers to use Role claims.
+                RoleClaimType = ClaimTypes.Role,
+
+                // Configure to only allow SHA256 algorithm.
+                ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+
+                // Configure time skew to allow only a small grace period for time discrepancy.
+                ClockSkew = TimeSpan.FromSeconds(30)
             };
 
 
