@@ -901,7 +901,7 @@ namespace RPG_Login_API.Services
 
             // SUCCESS: UPDATE DATABASE | Move pending secondary email to secondary email, then clear pending.
             userAccount.SecondaryEmail = targetEmail;
-            userAccount.PendingNewPrimaryEmail = string.Empty;
+            userAccount.PendingNewSecondaryEmail = string.Empty;
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             userAccount.InLauncherStatus = true;
             userAccount.LastInLauncherTime = DateTime.UtcNow;
