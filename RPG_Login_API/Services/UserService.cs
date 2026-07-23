@@ -309,6 +309,7 @@ namespace RPG_Login_API.Services
 
             // SUCCESS: GENERATE LOGIN RESPONSE | On successful email verification, re-generate both refresh and access token (like login).
             var response = GenerateLoginResponse(userAccount, isForNewAccount); // Is initial login step for new account, else full access is full login.
+            response.PrimaryEmail = targetEmail;        // Manually update primary email in response.
 
             // UPDATE DATABASE | After token generation, update account document.
             userAccount.PrimaryEmail = targetEmail;                    // Target email will be existing email OR pending new email, depending on context.
@@ -504,6 +505,7 @@ namespace RPG_Login_API.Services
 
             // RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens with new username.
             var response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
+            response.Username = newUsername;        // Manually update username in response.
 
             // UPDATE DOCUMENT AND DATABASE | Update username and last username changed time in document, then update database.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
@@ -701,7 +703,8 @@ namespace RPG_Login_API.Services
             {
                 RecoveryCode = _mfaCodeService.GenerateMfaRecoveryCode(),   // Generate new here.
                 Username = loginResponse.Username,
-                Email = loginResponse.PrimaryEmail,
+                PrimaryEmail = loginResponse.PrimaryEmail,
+                SecondaryEmail = loginResponse.SecondaryEmail,
                 LoginStatusCode = loginResponse.LoginStatusCode,
                 RefreshToken = loginResponse.RefreshToken,
                 AccessToken = loginResponse.AccessToken,
@@ -779,7 +782,8 @@ namespace RPG_Login_API.Services
             {
                 RecoveryCode = _mfaCodeService.GenerateMfaRecoveryCode(),   // Generate new here.
                 Username = loginResponse.Username,
-                Email = loginResponse.PrimaryEmail,
+                PrimaryEmail = loginResponse.PrimaryEmail,
+                SecondaryEmail = loginResponse.SecondaryEmail,
                 LoginStatusCode = loginResponse.LoginStatusCode,
                 RefreshToken = loginResponse.RefreshToken,
                 AccessToken = loginResponse.AccessToken,
@@ -898,6 +902,7 @@ namespace RPG_Login_API.Services
 
             // SUCCESS | Generate full login response with newly-verified and ready-to-use secondary email.
             var response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
+            response.SecondaryEmail = targetEmail;      // Manually update response after created.
 
             // SUCCESS: UPDATE DATABASE | Move pending secondary email to secondary email, then clear pending.
             userAccount.SecondaryEmail = targetEmail;
