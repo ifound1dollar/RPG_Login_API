@@ -25,11 +25,12 @@ namespace RPG_Login_API.Services
             public const string MfaNotEnabled = "mfa_not_enabled";
             public const string ResetPassword = "reset_password";
             public const string ChangeEmail = "change_email";
+            public const string LockedForMfaReset = "locked_for_mfa_reset";
             public const string AwaitingMfa = "awaiting_mfa";
             public const string FullAccess = "full_access";
 
             public const string Any = EmailNotVerified + "," + MfaNotEnabled + "," + ResetPassword + ","
-                + ChangeEmail + "," + AwaitingMfa + "," + FullAccess;
+                + ChangeEmail + "," + LockedForMfaReset + "," + AwaitingMfa + "," + FullAccess;
         }
 
         private readonly byte[] _jwtKeyBytes;

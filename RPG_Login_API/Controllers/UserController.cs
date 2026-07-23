@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Org.BouncyCastle.Asn1.Ocsp;
 using RPG_Login_API.Models.UserRequests;
 using RPG_Login_API.Services;
 using RPG_Login_API.Services.Interfaces;
@@ -334,6 +335,58 @@ namespace RPG_Login_API.Controllers
             }
 
             (int code, object? response) = await _service.UserRegenerateMfaRecoveryCodeAsync(username);
+            return StatusCode(code, response);
+        }
+
+        #endregion
+
+        #region Public: Secondary Email Setup
+
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only fully-logged-in users can configure secondary email.
+        [Route("submit-secondary-email")]
+        [HttpPost]
+        public async Task<ActionResult> UserSubmitSecondaryEmailAsync(SubmitSecondaryEmailRequestModel request)
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client submit secondary email failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, object? response) = await _service.UserSubmitSecondaryEmailAsync(username, request.SecondaryEmail);
+            return StatusCode(code, response);
+        }
+
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only fully-logged-in users can configure secondary email.
+        [Route("resend-secondary-verification-code")]
+        [HttpPost]
+        public async Task<ActionResult> UserResendSecondaryEmailVerificationCodeAsync()
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client resend secondary email verification code failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, object? response) = await _service.UserResendSecondaryEmailVerificationCodeAsync(username);
+            return StatusCode(code, response);
+        }
+
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only fully-logged-in users can configure secondary email.
+        [Route("verify-secondary-email")]
+        [HttpPost]
+        public async Task<ActionResult> UserVerifySecondaryEmailAsync(VerifySecondaryEmailRequestModel request)
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client recover MFA failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            (int code, object? response) = await _service.UserVerifySecondaryEmailAsync(username, request.Code);
             return StatusCode(code, response);
         }
 

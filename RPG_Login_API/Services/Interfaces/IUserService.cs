@@ -30,6 +30,10 @@ namespace RPG_Login_API.Services.Interfaces
         public Task<(int, object?)> UserRecoverMfaAsync(string username, string recoveryKey);
         public Task<(int, object?)> UserRegenerateMfaRecoveryCodeAsync(string username);
 
+        public Task<(int, object?)> UserSubmitSecondaryEmailAsync(string username, string secondaryEmail);
+        public Task<(int, object?)> UserResendSecondaryEmailVerificationCodeAsync(string username);
+        public Task<(int, object?)> UserVerifySecondaryEmailAsync(string username, string confirmationCode);
+
         public Task<(int, object?)> UserPlayGameAsync(string username);
 
         public Task<(int, object?)> UserPingInLauncherAsync(string username);

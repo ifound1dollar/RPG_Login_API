@@ -114,4 +114,22 @@ namespace RPG_Login_API.Models.UserRequests
         [Required(ErrorMessage = "Recovery code is required.")]
         public string RecoveryCode { get; set; } = string.Empty;
     }
+
+
+
+
+
+    // RECOVERY
+
+    public class SubmitSecondaryEmailRequestModel
+    {
+        [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "Secondary email must be a valid email address.")]
+        public string SecondaryEmail { get; set; } = string.Empty;
+    }
+
+    public class VerifySecondaryEmailRequestModel
+    {
+        [StringLength(8, ErrorMessage = "Confirmation code must be length 8.")]
+        public string Code { get; set; } = string.Empty;
+    }
 }

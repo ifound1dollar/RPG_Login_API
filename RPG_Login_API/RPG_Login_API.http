@@ -1,4 +1,4 @@
-@RPG_Login_API_HostAddress = https://localhost:7127
+@RPG_Login_API_HostAddress = https://localhost:7128
 
 ### Login and registration
 
@@ -14,12 +14,12 @@ Accept: application/json
 ###
 
 # @name login
-POST {{RPG_Login_API_HostAddress}}/api/users/login
+POST {{RPG_Login_API_HostAddress}}/users/login
 Content-Type: application/json
 Accept: application/json
 {
-  "UsernameOrEmail": "seconduser",
-  "Password": "Secondpassword2@"
+  "UsernameOrEmail": "ifound1dollar",
+  "Password": "z$mAY6N$QEa3Tb#!"
 }
 
 ###

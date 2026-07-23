@@ -19,20 +19,24 @@ namespace RPG_Login_API.Models.MongoDB
         [BsonElement("username")]
         public string Username { get; set; } = string.Empty;
 
-        [BsonElement("email")]
-        public string Email { get; set; } = string.Empty;
+        [BsonElement("primary_email")]
+        public string PrimaryEmail { get; set; } = string.Empty;
 
-        [BsonElement("pending_new_email")]
-        public string PendingNewEmail { get; set; } = string.Empty;
+        [BsonElement("pending_new_primary_email")]
+        public string PendingNewPrimaryEmail { get; set; } = string.Empty;
 
         [BsonElement("password_hash")]
         public string PasswordHash { get; set; } = string.Empty;
 
-        [BsonElement("is_email_verified")]
+
+
+        [BsonElement("is_primary_email_verified")]
         public bool IsEmailVerified { get; set; } = false;
 
         [BsonElement("does_password_need_reset")]
         public bool DoesPasswordNeedReset { get; set; } = false;
+
+
 
         [BsonElement("active_mfa_key")]
         public string ActiveMfaKey { get; set; } = string.Empty;
@@ -42,6 +46,25 @@ namespace RPG_Login_API.Models.MongoDB
 
         [BsonElement("mfa_recovery_code_hash")]
         public string MfaRecoveryCodeHash { get; set; } = string.Empty;
+
+
+
+        [BsonElement("secondary_email")]
+        public string SecondaryEmail { get; set; } = string.Empty;
+
+        [BsonElement("pending_new_secondary_email")]
+        public string PendingNewSecondaryEmail { get; set; } = string.Empty;
+
+        [BsonElement("mfa_hard_reset_initiated_time")]
+        public DateTime MfaHardResetInitiatedTime { get; set; } = DateTime.MinValue;
+
+        [BsonElement("mfa_hard_reset_locked_until_time")]
+        public DateTime MfaHardResetLockedUntilTime { get; set; } = DateTime.MinValue;
+
+        [BsonElement("mfa_hard_reset_cancel_token")]
+        public string MfaHardResetCancelToken { get; set; } = string.Empty;
+
+
 
         [BsonElement("refresh_token")]
         public string RefreshTokenHash { get; set; } = string.Empty;
@@ -65,7 +88,7 @@ namespace RPG_Login_API.Models.MongoDB
         [BsonElement("account_created_time")]
         public DateTime AccountCreatedTime { get; set; } = DateTime.MinValue;
 
-        [BsonElement("account_locked_until")]
+        [BsonElement("unused_account_locked_until")]
         public DateTime AccountLockedUntil { get; set; } = DateTime.MinValue;
 
         [BsonElement("last_password_changed_time")]

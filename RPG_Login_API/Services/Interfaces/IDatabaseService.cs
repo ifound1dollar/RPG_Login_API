@@ -28,5 +28,8 @@ namespace RPG_Login_API.Services.Interfaces
         public Task DeleteOneByIdAsync(string id);
         public Task DeleteOneByUsernameAsync(string username);
         public Task DeleteOneByEmailAsync(string email);
+
+        // INFO
+        public Task<bool> IsSecondaryEmailInUseAsync(string secondaryEmail);
     }
 }

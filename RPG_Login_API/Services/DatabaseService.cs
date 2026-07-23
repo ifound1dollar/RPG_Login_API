@@ -76,7 +76,7 @@ namespace RPG_Login_API.Services
         public async Task<UserAccountModel> GetOneByEmailAsync(string email)
         {
             // Run simple comparison on account email. Will be index in MongoDB.
-            return await _userAccountsCollection.Find(item => item.Email == email).FirstOrDefaultAsync();
+            return await _userAccountsCollection.Find(item => item.PrimaryEmail == email).FirstOrDefaultAsync();
         }
 
 
@@ -103,7 +103,7 @@ namespace RPG_Login_API.Services
         public async Task UpdateOneByEmailAsync(string email, UserAccountModel model)
         {
             // Replaces the existing document entirely, searching by email.
-            await _userAccountsCollection.ReplaceOneAsync((item => item.Email == email), model);
+            await _userAccountsCollection.ReplaceOneAsync((item => item.PrimaryEmail == email), model);
         }
 
 
@@ -120,7 +120,14 @@ namespace RPG_Login_API.Services
 
         public async Task DeleteOneByEmailAsync(string email)
         {
-            await _userAccountsCollection.DeleteOneAsync(item => item.Email == email);
+            await _userAccountsCollection.DeleteOneAsync(item => item.PrimaryEmail == email);
+        }
+
+
+
+        public async Task<bool> IsSecondaryEmailInUseAsync(string secondaryEmail)
+        {
+            return await _userAccountsCollection.Find(item => item.SecondaryEmail == secondaryEmail).AnyAsync();
         }
 
         #endregion

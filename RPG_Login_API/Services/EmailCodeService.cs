@@ -76,6 +76,13 @@ namespace RPG_Login_API.Services
 
         public async Task<(int, string)> SendCodeToEmailAsync(string email, ConfirmationCodeData.CodeContext context)
         {
+            // ENSURE EMAIL IS NOT EMPTY
+            if (string.IsNullOrEmpty(email))
+            {
+                _logger.LogInformation($"Failed to send code to email: provided email was empty string (email: {email}, context: {context.ToString()})");
+                return (400, "Cannot send code to empty email.");
+            }
+
             // PREVENT NEW CODE SPAM | Ensure there is not an existing confirmation code for this account created less than 60 seconds ago.
             if (_confirmationCodes.TryGetValue(email, out var codeData))
             {

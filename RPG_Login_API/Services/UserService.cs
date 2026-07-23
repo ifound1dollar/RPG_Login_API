@@ -219,7 +219,7 @@ namespace RPG_Login_API.Services
             UserAccountModel userAccount = new()
             {
                 Username = username,
-                Email = email,
+                PrimaryEmail = email,
                 PasswordHash = HashUtility.GenerateNewPasswordHash(password),
                 RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(refreshToken),   // Store hashed token in database.
                 AccountCreatedTime = DateTime.UtcNow,
@@ -276,8 +276,8 @@ namespace RPG_Login_API.Services
             }
 
             // RESEND EMAIL VERIFICATION CODE | Generate and send a new code, target email depending on context.
-            string targetEmail = (isForNewAccount) ? userAccount.Email : userAccount.PendingNewEmail;
-            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(targetEmail, ConfirmationCodeData.CodeContext.EmailVerification);
+            string targetEmail = (isForNewAccount) ? userAccount.PrimaryEmail : userAccount.PendingNewPrimaryEmail;
+            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(targetEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
 
             // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
             return (code, message);
@@ -301,8 +301,8 @@ namespace RPG_Login_API.Services
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            string targetEmail = (isForNewAccount) ? userAccount.Email : userAccount.PendingNewEmail;
-            if (!_emailCodeService.ValidateSubmittedCode(targetEmail, confirmationCode, ConfirmationCodeData.CodeContext.EmailVerification))
+            string targetEmail = (isForNewAccount) ? userAccount.PrimaryEmail : userAccount.PendingNewPrimaryEmail;
+            if (!_emailCodeService.ValidateSubmittedCode(targetEmail, confirmationCode, ConfirmationCodeData.CodeContext.PrimaryEmailVerification))
             {
                 return (401, "Invalid or expired confirmation code.");
             }
@@ -311,8 +311,8 @@ namespace RPG_Login_API.Services
             var response = GenerateLoginResponse(userAccount, isForNewAccount); // Is initial login step for new account, else full access is full login.
 
             // UPDATE DATABASE | After token generation, update account document.
-            userAccount.Email = targetEmail;                    // Target email will be existing email OR pending new email, depending on context.
-            userAccount.PendingNewEmail = string.Empty;         // Clear pending new email upon verification; verified email is now main email.
+            userAccount.PrimaryEmail = targetEmail;                    // Target email will be existing email OR pending new email, depending on context.
+            userAccount.PendingNewPrimaryEmail = string.Empty;         // Clear pending new email upon verification; verified email is now main email.
             userAccount.IsEmailVerified = true;
             userAccount.LastEmailChangedTime = DateTime.UtcNow; // Consider verification to be 'changed time'.
             userAccount.InLauncherStatus = true;
@@ -353,7 +353,7 @@ namespace RPG_Login_API.Services
             }
 
             // TRY TO SEND CODE TO EMAIL | Do not await because sending code can take a while.
-            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.PasswordReset);
+            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PasswordReset);
         }
 
         public async Task<(int, object?)> UserInitiatePasswordResetAsync(string usernameOrEmail, string confirmationCode)
@@ -383,7 +383,7 @@ namespace RPG_Login_API.Services
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode, ConfirmationCodeData.CodeContext.PasswordReset))
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PrimaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.PasswordReset))
             {
                 return (401, "Invalid or expired confirmation code.");
             }
@@ -537,7 +537,7 @@ namespace RPG_Login_API.Services
             }
 
             // TRY TO SEND CODE TO EMAIL | Send a confirmation code to the account's existing email.
-            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.ChangeEmail);
+            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.ChangePrimaryEmail);
 
             // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
             return (code, message);
@@ -561,7 +561,7 @@ namespace RPG_Login_API.Services
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.Email, confirmationCode, ConfirmationCodeData.CodeContext.ChangeEmail))
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PrimaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.ChangePrimaryEmail))
             {
                 return (401, "Invalid or expired confirmation code.");
             }
@@ -604,10 +604,10 @@ namespace RPG_Login_API.Services
             }
 
             // VERIFY NEW EMAIL IS NOT THE SAME AS PREVIOUS
-            if (newEmail == userAccount.Email)
+            if (newEmail == userAccount.PrimaryEmail)
             {
                 _logger.LogInformation($"Submit new email failed: new email cannot be the same as old email (username: {username}" +
-                    $" | existing email: {userAccount.Email} | new email: {newEmail})");
+                    $" | existing email: {userAccount.PrimaryEmail} | new email: {newEmail})");
                 return (409, "New email cannot be the same as old email.");
             }
 
@@ -616,18 +616,18 @@ namespace RPG_Login_API.Services
             if (!isEmailAvailable)
             {
                 _logger.LogInformation($"Submit new email failed: email already in use (username: {username}" +
-                    $" | existing email: {userAccount.Email} | new email: {newEmail})");
+                    $" | existing email: {userAccount.PrimaryEmail} | new email: {newEmail})");
                 return (500, "An unexpected error occured during new email submission, please try again.");
             }
 
             // SUCCESS: ADD PENDING NEW EMAIL TO DOCUMENT | Update pending new email field, but do NOT set last changed time or logout yet.
-            userAccount.PendingNewEmail = newEmail;
+            userAccount.PendingNewPrimaryEmail = newEmail;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // SEND CONFIRMATION CODE TO NEW EMAIL | Do not await, because sending email can take a while.
-            _ = _emailCodeService.SendCodeToEmailAsync(newEmail, ConfirmationCodeData.CodeContext.EmailVerification);
+            _ = _emailCodeService.SendCodeToEmailAsync(newEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
 
-            _logger.LogInformation($"User submit new email successful (username: {username} | current email: {userAccount.Email} | new email: {newEmail})");
+            _logger.LogInformation($"User submit new email successful (username: {username} | current email: {userAccount.PrimaryEmail} | new email: {newEmail})");
             return (200, "Submit new email successful.");
         }
 
@@ -701,7 +701,7 @@ namespace RPG_Login_API.Services
             {
                 RecoveryCode = _mfaCodeService.GenerateMfaRecoveryCode(),   // Generate new here.
                 Username = loginResponse.Username,
-                Email = loginResponse.Email,
+                Email = loginResponse.PrimaryEmail,
                 LoginStatusCode = loginResponse.LoginStatusCode,
                 RefreshToken = loginResponse.RefreshToken,
                 AccessToken = loginResponse.AccessToken,
@@ -779,7 +779,7 @@ namespace RPG_Login_API.Services
             {
                 RecoveryCode = _mfaCodeService.GenerateMfaRecoveryCode(),   // Generate new here.
                 Username = loginResponse.Username,
-                Email = loginResponse.Email,
+                Email = loginResponse.PrimaryEmail,
                 LoginStatusCode = loginResponse.LoginStatusCode,
                 RefreshToken = loginResponse.RefreshToken,
                 AccessToken = loginResponse.AccessToken,
@@ -792,6 +792,122 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"Regenerate MFA recovery code successful (username: {username})");
+            return (200, response);
+        }
+
+        #endregion
+
+        #region (Interface) Public: User Account Secondary Email Setup
+
+        public async Task<(int, object?)> UserSubmitSecondaryEmailAsync(string username, string secondaryEmail)
+        {
+            secondaryEmail = secondaryEmail.Trim();
+
+            // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Submit secondary email failed: account for username stored in email change token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Submit secondary email failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
+            }
+
+            // VERIFY NEW EMAIL IS NOT THE SAME AS PREVIOUS
+            if (secondaryEmail == userAccount.SecondaryEmail)
+            {
+                _logger.LogInformation($"Submit secondary email failed: new email cannot be the same as old email (username: {username}" +
+                    $" | existing secondary email: {userAccount.PrimaryEmail} | submitted new email: {secondaryEmail})");
+                return (409, "New secondary email cannot be the same as old secondary email.");
+            }
+
+            // VERIFY THAT EMAIL IS NOT ALREADY IN USE | Deny change with GENERIC ERROR MESSAGE if email is in use by another account.
+            bool isEmailAvailable = await IsEmailAvailableAsync(secondaryEmail);
+            if (!isEmailAvailable)
+            {
+                _logger.LogInformation($"Submit new email failed: email already in use (username: {username}" +
+                    $" | existing secondary email: {userAccount.PrimaryEmail} | submitted new email: {secondaryEmail})");
+                return (500, "An unexpected error occured during new email submission, please try again.");
+            }
+
+            // SUCCESS: ADD PENDING NEW EMAIL TO DOCUMENT | Update pending new email field, but do NOT set last changed time or logout yet.
+            userAccount.PendingNewSecondaryEmail = secondaryEmail;
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // SEND CONFIRMATION CODE TO NEW EMAIL | Do not await, because sending email can take a while.
+            _ = _emailCodeService.SendCodeToEmailAsync(secondaryEmail, ConfirmationCodeData.CodeContext.SecondaryEmailVerification);
+
+            _logger.LogInformation($"User submit secondary email successful (username: {username} | current secondary email: {userAccount.PrimaryEmail}" +
+                $"| submitted new email: {secondaryEmail})");
+            return (200, "Submit secondary email successful.");
+        }
+
+        public async Task<(int, object?)> UserResendSecondaryEmailVerificationCodeAsync(string username)
+        {
+            // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Resend secondary email verification code failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Resend secondary email verification code failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
+            }
+
+            // RESEND EMAIL VERIFICATION CODE | Generate and send a new code, target email depending on context.
+            string targetEmail = userAccount.PendingNewSecondaryEmail;
+            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(targetEmail, ConfirmationCodeData.CodeContext.SecondaryEmailVerification);
+
+            // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
+            return (code, message);
+        }
+
+        public async Task<(int, object?)> UserVerifySecondaryEmailAsync(string username, string confirmationCode)
+        {
+            // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Secondary email verification failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                _logger.LogInformation($"Secondary email verification failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account is currently locked for security reasons, please try again later.");
+            }
+
+            // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
+            string targetEmail = userAccount.PendingNewSecondaryEmail;
+            if (!_emailCodeService.ValidateSubmittedCode(targetEmail, confirmationCode, ConfirmationCodeData.CodeContext.SecondaryEmailVerification))
+            {
+                return (401, "Invalid or expired confirmation code.");
+            }
+
+            // SUCCESS | Generate full login response with newly-verified and ready-to-use secondary email.
+            var response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
+
+            // SUCCESS: UPDATE DATABASE | Move pending secondary email to secondary email, then clear pending.
+            userAccount.SecondaryEmail = targetEmail;
+            userAccount.PendingNewPrimaryEmail = string.Empty;
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
+            userAccount.InLauncherStatus = true;
+            userAccount.LastInLauncherTime = DateTime.UtcNow;
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            _logger.LogInformation($"User secondary email verification successful (username: {username}, verified secondary email: {targetEmail})");
             return (200, response);
         }
 
@@ -968,7 +1084,7 @@ namespace RPG_Login_API.Services
                 // If username is in use but account email was never verified and was created >30 days ago, delete it (zombie).
                 if (!existingAccount.IsEmailVerified && DateTime.UtcNow - existingAccount.AccountCreatedTime > TimeSpan.FromDays(30))
                 {
-                    await _databaseService.DeleteOneByEmailAsync(existingAccount.Email);
+                    await _databaseService.DeleteOneByEmailAsync(existingAccount.PrimaryEmail);
                     return true;                // Deleted zombie, so username IS available.
                 }
 
@@ -993,14 +1109,20 @@ namespace RPG_Login_API.Services
                 // If email is in use but account email was never verified and was created >30 days ago, delete it (zombie).
                 if (!existingAccount.IsEmailVerified && DateTime.UtcNow - existingAccount.AccountCreatedTime > TimeSpan.FromDays(30))
                 {
-                    await _databaseService.DeleteOneByEmailAsync(existingAccount.Email);
+                    await _databaseService.DeleteOneByEmailAsync(existingAccount.PrimaryEmail);
                     return true;                // Deleted zombie, so email IS available.
                 }
 
                 return false;                   // Else was not zombie, so email is NOT available.
             }
 
-            // Else if existing account is null, then does not exist so is available.
+            // Check for secondary email.
+            if (await _databaseService.IsSecondaryEmailInUseAsync(email))
+            {
+                return false;                   // Secondary email can only be set if the account email is fully verified (not zombie).
+            }
+
+            // Else is not in use as primary (non-zombie) OR secondary.
             return true;
         }
 
@@ -1013,20 +1135,26 @@ namespace RPG_Login_API.Services
                 // If email not verified, code is 1 and a confirmation email must be sent.
                 loginCode = 10;
                 role = TokenService.Roles.EmailNotVerified;
-                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.EmailVerification);
+                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
             }
             else if (userAccount.DoesPasswordNeedReset)
             {
                 // If password must be reset for security reasons, code is 2 and confirmation email must be sent.
                 loginCode = 20;
                 role = TokenService.Roles.ResetPassword;
-                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.Email, ConfirmationCodeData.CodeContext.PasswordReset);
+                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PasswordReset);
             }
             else if (string.IsNullOrEmpty(userAccount.ActiveMfaKey))
             {
                 // If no MFA key, then MFA is not yet enabled for this account.
                 loginCode = 30;
                 role = TokenService.Roles.MfaNotEnabled;
+            }
+            else if (userAccount.MfaHardResetLockedUntilTime > DateTime.UtcNow)
+            {
+                // If locked until later, then the account is effectively disabled for now.
+                loginCode = 40;
+                role = TokenService.Roles.LockedForMfaReset;
             }
             else
             {
@@ -1049,7 +1177,8 @@ namespace RPG_Login_API.Services
             return new LoginResponseModel()
             {
                 Username = userAccount.Username,
-                Email = userAccount.Email,
+                PrimaryEmail = userAccount.PrimaryEmail,
+                SecondaryEmail = userAccount.SecondaryEmail,    // May be empty.
                 LoginStatusCode = loginCode,
                 RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, isFullAccess, durationDays: 30),
                 AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, role, durationMinutes: 15),

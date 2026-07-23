@@ -2,7 +2,7 @@
 {
     public class ConfirmationCodeData
     {
-        public enum CodeContext { None, EmailVerification, PasswordReset, ChangeEmail }
+        public enum CodeContext { None, PrimaryEmailVerification, PasswordReset, ChangePrimaryEmail, SecondaryEmailVerification }
 
         public string Code { get; private set; }
         public CodeContext Context { get; private set; }
