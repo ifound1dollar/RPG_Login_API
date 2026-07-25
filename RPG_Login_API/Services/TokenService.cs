@@ -25,12 +25,11 @@ namespace RPG_Login_API.Services
             public const string MfaNotEnabled = "mfa_not_enabled";
             public const string ResetPassword = "reset_password";
             public const string ChangeEmail = "change_email";
-            public const string LockedForMfaReset = "locked_for_mfa_reset";
             public const string AwaitingMfa = "awaiting_mfa";
             public const string FullAccess = "full_access";
 
             public const string Any = EmailNotVerified + "," + MfaNotEnabled + "," + ResetPassword + ","
-                + ChangeEmail + "," + LockedForMfaReset + "," + AwaitingMfa + "," + FullAccess;
+                + ChangeEmail + "," + AwaitingMfa + "," + FullAccess;
         }
 
         private readonly byte[] _jwtKeyBytes;
@@ -83,17 +82,14 @@ namespace RPG_Login_API.Services
 
         #region (Interface) Public: Token Generation
 
-        public string GenerateRefreshToken(string username, bool isFullAccess, double durationDays = 30)
+        public string GenerateRefreshToken(string username, double durationDays = 30)
         {
-            string role = (isFullAccess) ? TokenService.Roles.FullAccess : TokenService.Roles.AwaitingMfa;
-
             var tokenDescriptor = new SecurityTokenDescriptor()
             {
                 
                 Subject = new ClaimsIdentity(
                 [
-                    new Claim(JwtRegisteredClaimNames.UniqueName, username),    // We are using username, not email.
-                    new Claim(ClaimTypes.Role, role)                            // Allows MFA skip on refresh login if full access.
+                    new Claim(JwtRegisteredClaimNames.UniqueName, username)
                 ]),
                 Expires = DateTime.UtcNow.AddDays(durationDays),
                 Issuer = _issuer,
@@ -129,14 +125,13 @@ namespace RPG_Login_API.Services
 
         #region (Interface) Public: Token Reading, Comparison, Validation
 
-        public bool TryReadRefreshToken(string tokenString, [NotNullWhen(true)] out string? username, out bool isFullAccess)
+        public bool TryReadRefreshToken(string tokenString, [NotNullWhen(true)] out string? username)
         {
             username = null;
-            isFullAccess = false;
-            if (!TryReadJwtToken(_handler, tokenString, out var token)) return false;
+            if (!TryGetJwtTokenFromString(_handler, tokenString, out var token)) return false;
 
             // Assign username with valid string or null, returning true if valid and false if null.
-            return TryReadJwtTokenData(token, out username, out isFullAccess);
+            return TryReadJwtTokenData(token, out username);
         }
 
         public bool ValidateToken(string submittedToken, string storedTokenHash, string guid = "")
@@ -194,31 +189,24 @@ namespace RPG_Login_API.Services
 
         #region Private Static: Token String Parsing
 
-        private static bool TryReadJwtToken(JwtSecurityTokenHandler handler, string jwtToken, [NotNullWhen(true)] out JwtSecurityToken? token)
+        private static bool TryGetJwtTokenFromString(JwtSecurityTokenHandler handler, string jwtToken, [NotNullWhen(true)] out JwtSecurityToken? token)
         {
             // First, try to read token string into SecurityToken.
             token = (handler.CanReadToken(jwtToken)) ? handler.ReadJwtToken(jwtToken) : null;
             return token != null;   // Returns true if token is valid, else false if null.
         }
 
-        private static bool TryReadJwtTokenData(JwtSecurityToken token, [NotNullWhen(true)] out string? username, out bool isFullAccess)
+        private static bool TryReadJwtTokenData(JwtSecurityToken token, [NotNullWhen(true)] out string? username)
         {
             // Retrieve username from token. IMPORTANT: ClaimType.Name MAPS TO UniqueName.
-            isFullAccess = false;
             username = token.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.UniqueName)?.Value;
-            string? role = token.Claims.FirstOrDefault(c => c.Type == "role")?.Value;
-
-            if (role != null && role == TokenService.Roles.FullAccess)
-            {
-                isFullAccess = true;
-            }
-            return (username != null && role != null);  // True if both are non-null.
+            return (username != null);
         }
 
         private static bool CompareTokenGuid(string token, string passedInGuid, JwtSecurityTokenHandler handler)
         {
             // Try to read JWT token and extract stored GUID, then compare to passed-in GUID.
-            if (TryReadJwtToken(handler, token, out var jwtToken))
+            if (TryGetJwtTokenFromString(handler, token, out var jwtToken))
             {
                 string? storedGuid = jwtToken.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti)?.Value;
                 if (storedGuid != null)

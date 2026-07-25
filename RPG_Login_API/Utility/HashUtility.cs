@@ -93,6 +93,8 @@ namespace RPG_Login_API.Utility
         /// <returns> The hashed, un-salted refresh token. </returns>
         public static string GenerateNewRefreshTokenHash(string refreshToken)
         {
+            if (string.IsNullOrEmpty(refreshToken)) return string.Empty;
+
             // Convert input string to bytes.
             byte[] bytes = Encoding.UTF8.GetBytes(refreshToken);
 

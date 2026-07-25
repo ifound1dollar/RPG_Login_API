@@ -105,7 +105,7 @@ namespace RPG_Login_API.Controllers
 
 
 
-        [Authorize(Roles = TokenService.Roles.EmailNotVerified + "," + TokenService.Roles.FullAccess)]  // New account verification AND manual email change resend.
+        [Authorize(Roles = TokenService.Roles.EmailNotVerified)]    // New account verification only.
         [Route("resend-email-verification-code")]
         [HttpPost]
         public async Task<ActionResult> UserResendEmailVerificationCodeAsync()
@@ -118,17 +118,16 @@ namespace RPG_Login_API.Controllers
             }
 
             // Email not verified implies is for new account, else full access is for manual email change.
-            bool isForNewAccount = (role == TokenService.Roles.EmailNotVerified);
-            (int code, object? response) = await _service.UserResendEmailVerificationCode(username, isForNewAccount);
+            (int code, object? response) = await _service.UserResendEmailVerificationCodeAsync(username);
             return StatusCode(code, response);
         }
 
 
 
-        [Authorize(Roles = TokenService.Roles.EmailNotVerified + "," + TokenService.Roles.ChangeEmail)] // New account verification AND manual email change verification.
+        [Authorize(Roles = TokenService.Roles.EmailNotVerified)]    // New account verification only.
         [Route("verify-email")]
         [HttpPost]
-        public async Task<ActionResult> UserVerifyAccountEmail([FromBody] VerifyEmailRequestModel request)
+        public async Task<ActionResult> UserVerifyEmailForNewAccountAsync([FromBody] VerifyEmailRequestModel request)
         {
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
@@ -138,8 +137,7 @@ namespace RPG_Login_API.Controllers
             }
 
             // Email not verified implies is for new account, else full access is for manual email change.
-            bool isForNewAccount = (role == TokenService.Roles.EmailNotVerified);
-            (int code, object? response) = await _service.UserVerifyAccountEmailAsync(username, request.Code, isForNewAccount);
+            (int code, object? response) = await _service.UserVerifyEmailForNewAccountAsync(username, request.Code);
             return StatusCode(code, response);
         }
 
@@ -251,18 +249,56 @@ namespace RPG_Login_API.Controllers
 
 
         [Authorize(Roles = TokenService.Roles.ChangeEmail)]
-        [Route("submit-new-email")]
+        [Route("submit-changed-email")]
         [HttpPost]
-        public async Task<ActionResult> UserSubmitNewEmailAsync(SubmitNewEmailRequestModel request)
+        public async Task<ActionResult> UserSubmitChangedEmailAsync(SubmitChangedEmailRequestModel request)
         {
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client submit new email failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("Client submit changed email failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserSubmitNewEmailAsync(username, request.NewEmail);
+            (int code, object? response) = await _service.UserSubmitChangedEmailAsync(username, request.NewEmail);
+            return StatusCode(code, response);
+        }
+
+
+
+        [Authorize(Roles = TokenService.Roles.ChangeEmail)]     // Manual change only.
+        [Route("resend-changed-email-verification-code")]
+        [HttpPost]
+        public async Task<ActionResult> UserResendChangedEmailVerificationCodeAsync()
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client resend changed email verification code failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            // Email not verified implies is for new account, else full access is for manual email change.
+            (int code, object? response) = await _service.UserResendChangedEmailVerificationCodeAsync(username);
+            return StatusCode(code, response);
+        }
+
+
+
+        [Authorize(Roles = TokenService.Roles.ChangeEmail)]     // Manual change only.
+        [Route("verify-changed-email")]
+        [HttpPost]
+        public async Task<ActionResult> UserVerifyChangedEmailAsync(VerifyEmailRequestModel request)
+        {
+            // Retrieve account data (username, role, guid) from access token in request header.
+            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
+            {
+                _logger.LogInformation("Client verify changed email failed, incorrectly formatted access token in request header");
+                return BadRequest("Malformed access token in API request.");
+            }
+
+            // Email not verified implies is for new account, else full access is for manual email change.
+            (int code, object? response) = await _service.UserVerifyChangedEmailAsync(username, request.Code);
             return StatusCode(code, response);
         }
 

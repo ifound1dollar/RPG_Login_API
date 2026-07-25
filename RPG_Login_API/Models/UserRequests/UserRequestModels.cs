@@ -91,7 +91,7 @@ namespace RPG_Login_API.Models.UserRequests
         public string Code { get; set; } = string.Empty;
     }
 
-    public class SubmitNewEmailRequestModel
+    public class SubmitChangedEmailRequestModel
     {
         [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "New email must be a valid email address.")]
         public string NewEmail { get; set; } = string.Empty;

@@ -14,8 +14,8 @@ namespace RPG_Login_API.Services.Interfaces
         public Task<(int, object?)> UserRegisterAsync(string username, string email, string password);
         public Task<(int, object?)> UserLogoutAsync(string username);
 
-        public Task<(int, object?)> UserResendEmailVerificationCode(string username, bool isForNewAccount);
-        public Task<(int, object?)> UserVerifyAccountEmailAsync(string username, string confirmationCode, bool isForNewAccount);
+        public Task<(int, object?)> UserResendEmailVerificationCodeAsync(string username);
+        public Task<(int, object?)> UserVerifyEmailForNewAccountAsync(string username, string confirmationCode);
 
         public Task UserForgotPasswordAsync(string usernameOrEmail);
         public Task<(int, object?)> UserInitiatePasswordResetAsync(string usernameOrEmail, string confirmationCode);
@@ -23,7 +23,9 @@ namespace RPG_Login_API.Services.Interfaces
         public Task<(int, object?)> UserChangeUsernameAsync(string existingUsername, string newUsername);
         public Task<(int, object?)> UserRequestEmailChangeAsync(string username);
         public Task<(int, object?)> UserInitiateEmailChangeAsync(string username, string confirmationCode);
-        public Task<(int, object?)> UserSubmitNewEmailAsync(string username, string newEmail);
+        public Task<(int, object?)> UserSubmitChangedEmailAsync(string username, string newEmail);
+        public Task<(int, object?)> UserResendChangedEmailVerificationCodeAsync(string username);
+        public Task<(int, object?)> UserVerifyChangedEmailAsync(string username, string confirmationCode);
 
         public Task<(int, object?)> UserSetupMfaAsync(string username);
         public Task<(int, object?)> UserVerifyMfaSetupAsync(string username, string mfaCode);

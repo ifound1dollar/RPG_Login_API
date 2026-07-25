@@ -83,14 +83,14 @@ This endpoint is used to register (create) a new account. The user must submit a
 This endpoint simply logs out the user, retrieving the account data (like username) directly from the token. Server-side, the account's stored refresh token is removed from the database, disallowing further access token refreshing or refresh login; the user must explicitly log in again in order to access their account. While this endpoint returns 200 or 404, the logout process will almost always be performed without the user awaiting a response from this endpoint.
 
 ### Forgot password
-*See **Basic Account Information Management** section for details about this endpoint. This endpoint is used not only for manual password reset, but for account recovery.*
+*See **Basic Account Information Management** section for details about this endpoint. This endpoint is used both for manual password reset and for account recovery.*
 
 ---
 
 # Email Verification
 These endpoints are specifically for resending a confirmation code to the provided email for email verification, and actually verifying the email.
 
-### Resend email verification code
+### Resend email verification code (for initial account verification)
 - **Route:** */users/resend-email-verification-code*
 - **Method:** POST
 - **Accepts:** Nothing.
@@ -98,17 +98,17 @@ These endpoints are specifically for resending a confirmation code to the provid
 - **Status codes:** 200 on success, 401 for missing or invalid access token, 403 for account currently locked or cannot resend within 60 seconds of previous send, 404 for no account found matching username in token.
 - **Authorization:** Requires access token with 'email not verified' role (initial account setup) or 'full access' role (manual email change).
 
-This endpoint is used specifically for resending a confirmation code to the user's email, particularly for the email verification process. Unlike the forgot password endpoint, this endpoint returns details regarding whether the resend was successful because it requires a valid access token from the user. This endpoint should only be used if the user explicitly requests a new code, perhaps after waiting too long and thus the original code has expired. The user should call the 'verify account email' using the sent code to verify their email.
+This endpoint is used specifically for resending a confirmation code to the user's email, particularly for the account email verification process. Unlike the forgot password endpoint, this endpoint returns details regarding whether the resend was successful because it requires a valid access token from the user. This endpoint should only be used if the user explicitly requests a new code, perhaps after waiting too long and thus the original code has expired. The user should call the 'verify account email' endpoint using the sent code to verify their new account's email.
 
-### Verify account email (using confirmation code)
+### Verify account email (for initial account verification)
 - **Route:** */users/verify-email*
 - **Method:** POST
 - **Accepts:** The short-duration 8-character alphanumeric confirmation code sent to the user's email address.
 - **Returns:** A login response model with a custom login code describing the access level based on account state.
 - **Status codes:** 200 on success, 400 for missing or wrong-length code in request, 401 for missing or invalid access token *or* incorrect or expired code, 403 for account currently locked, 404 for no account found matching username in token.
-- **Authorization:** Requires access token with 'email not verified' role (initial account setup) or 'email change' role (specific to email change token).
+- **Authorization:** Requires access token with 'email not verified' role (initial account setup).
 
-This endpoint is used to verify the email address for a given user's account. The user must submit their current access token along with the 8-character alphanumeric confirmation code that was sent to the email address associated with the account. If the code is valid, the API will set the 'is email verified' flag for the account in the database, then return a login response model noting that the account email is verified (will still require MFA setup for new account, otherwise should be full access for manual email change).
+This endpoint is used to verify the email address for a given user's account. The user must submit their current access token along with the 8-character alphanumeric confirmation code that was sent to the email address associated with the account. If the code is valid, the API will set the 'is email verified' flag for the account in the database, then return a login response model noting that the account email is verified (will still require MFA setup for new account).
 
 ---
 
@@ -125,7 +125,7 @@ These endpoints are for managing basic account information like username, email 
 
 The change username endpoint allows a fully-logged-in user to change their account username. Because usernames are not particularly security-related, the username can be changed at any time without requiring a re-login *and* the API can safely tell the user whether the desired new username is avaialble. This process is effectively a one-off request, so this endpoint should always return a login response with a full access token. The process will fail if the user attempts to change their username within 30 days of prior change.
 
-### Request email change (email change process, step 1/4)
+### Request email change (manual email change process, step 1/4)
 - **Route:** */users/request-email-change*
 - **Method:** POST
 - **Accepts:** Nothing.
@@ -135,7 +135,7 @@ The change username endpoint allows a fully-logged-in user to change their accou
 
 This endpoint is used as the first step for the manual email change process, which simply sends a confirmation code to the currently-logged-in account's associated email address. Because the endpoint requires a full access token, the API can return whether the code was sent successfully. The user is expected to call the 'initiate email change' endpoint immediately afterward to submit the confirmation code and actually initiate the email change process. Only fully-logged in users can call this endpoint.
 
-### Initiate email change (email change process, step 2/4)
+### Initiate email change (manual email change process, step 2/4)
 - **Route:** */users/initiate-email-change*
 - **Method:** POST
 - **Accepts:** The short-duration 8-character alphanumeric confirmation code sent to the user's email address.
@@ -145,15 +145,35 @@ This endpoint is used as the first step for the manual email change process, whi
 
 This is the endpoint which actually initiate the email change process. It expects the confirmation code previously sent to the account's email address and will return a dedicated 'email change token' if the code is valid, which is used exclusively for the manual email change process (it is an access token which is only able to access the 'submit new email' and 'verify new email' endpoints). After initiating the email change process, the user is expected to call the 'submit new email' endpoint with the email change token as the next step. This endpoint is where the email change is rejected if the email was changed less than 30 days prior.
 
-### Submit new email (manual email change process, step 3/4)
-- **Route:** */users/submit-new-email*
+### Submit changed email (manual email change process, step 3/4)
+- **Route:** */users/submit-changed-email*
 - **Method:** POST
 - **Accepts:** The desired new email address for the account.
-- **Returns:** A login response model with a full-access token.
+- **Returns:** Nothing.
 - **Status codes:** 200 on success, 400 for missing or invalid email address in request, 401 for missing or invalid email change token, 403 for account currently locked, 404 for no account found matching username in token, 409 for new email is the same as existing email.
 - **Authorization:** Requires specific 'email change token', which is an access token with the particular 'email change' role.
 
 This endpoint accepts the user's desired new email address for the account, and explicitly requires the email change token generated from the manual email change initiation endpoint. The API does not tell the user whether their submitted email address is available for security reasons (otherwise this endpoint could be used as a method to generating a list of in-use emails). If the email is valid and not in use, the API will internally store this pending new email within the user's account in the database and await its verification. After successfully submitting their desired new email, the user is expected to call the 'verify new email' endpoint with the same 'email change token' used for this endpoint, which will allow the API to update the account's current email (the final step 4/4). Note that this endpoint does NOT check whether the user's email was changed less than 30 days prior because the initiate endpoint performs this check; the user cannot receive the new 'email change token' in the first place if the initiate endpoint detects it is within 30 days of previous change.
+
+### Resend changed email verification code (manual email change process)
+- **Route:** */users/resend-changed-email-verification-code*
+- **Method:** POST
+- **Accepts:** Nothing.
+- **Returns:** Nothing.
+- **Status codes:** 200 on success, 401 for missing or invalid access token, 403 for account currently locked or cannot resend within 60 seconds of previous send, 404 for no account found matching username in token.
+- **Authorization:** Requires access token with 'change email' role (manual email change).
+
+This endpoint is used specifically for resending a confirmation code to the user's pending new (changed) email. Unlike the forgot password endpoint, this endpoint returns details regarding whether the resend was successful because it requires a valid access token from the user. This endpoint should only be used if the user explicitly requests a new code, perhaps after waiting too long and thus the original code has expired. The user should call the 'verify changed email' endpoint using the sent code to verify their new account's email.
+
+### Verify changed email (manual email change process, step 4/4)
+- **Route:** */users/verify-changed-email*
+- **Method:** POST
+- **Accepts:** The short-duration 8-character alphanumeric confirmation code sent to the desired new email address for verification.
+- **Returns:** A login response model with a full-access token.
+- **Status codes:** 200 on success, 400 for missing or wrong-length code in request, 401 for missing or invalid access token *or* incorrect or expired code, 403 for account currently locked, 404 for no account found matching username in token.
+- **Authorization:** Requires access token with 'email change' role (specific to email change token).
+
+This endpoint is used to verify the user-submitted new email address, using the 8-character alphanumeric code sent to the desired new email for verification. If the code is valid, the API internally moves the 'pending' new email to the primary email slot in the database, then clears the pending slot to fully complete the email change process. It also ensures that the pending new email is not currently in use immediately before updating the database to be safe, but does not tell the user if the email is in use and the process fails (for security reasons). Upon success, the API returns a login response with a full-access token, as verifying the manually-changed email can only be done by fully-logged-in users.
 
 ### Forgot password (account recovery AND manual password reset process, step 1/3)
 - **Route:** */users/forgot-password*
@@ -265,7 +285,7 @@ This endpoint is used specifically for resending a confirmation code to the user
 - **Status codes:** 200 on success, 400 for missing or wrong-length code in request, 401 for missing or invalid access token *or* incorrect or expired code, 403 for account currently locked, 404 for no account found matching username in token.
 - **Authorization:** Requires access token with 'full access' role.
 
-This endpoint is used to verify the user's pending new secondary email address. The user must submit their current full access token along with the 8-character alphanumeric confirmation code that was sent to the pending secondary email address. If the code is valid, the API will move the pending new secondary email to the active secondary email slot. Finally, the API returns a login response model with data noting that the user's secondary email is now verified (secondary email is contained in the response for display purposes).
+This endpoint is used to verify the user's pending new secondary email address. The user must submit their current full access token along with the 8-character alphanumeric confirmation code that was sent to the pending secondary email address. If the code is valid, the API will move the pending new secondary email to the active secondary email slot. Finally, the API returns a login response model with data noting that the user's secondary email is now verified (secondary email is contained in the response for display purposes). Note that the API verifies that the new email is not in use immediately before updating the database just to be sure, but does not notify the user if the email is unavailable for security reasons.
 
 ---
 

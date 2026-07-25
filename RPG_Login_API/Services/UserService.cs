@@ -54,7 +54,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> UserLoginFromRefreshAsync(string refreshTokenString)
         {
             // PARSE TOKEN | Try to retrieve username and token object from the passed-in token string.
-            if (!_tokenService.TryReadRefreshToken(refreshTokenString, out var username, out bool isFullAccess))
+            if (!_tokenService.TryReadRefreshToken(refreshTokenString, out var username))
             {
                 _logger.LogInformation($"Refresh login failed: malformed (unreadable) refresh token in request");
                 return (400, "Malformed refresh token in refresh login request.");
@@ -71,8 +71,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Refresh login failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // VALIDATE TOKEN | Validate token against stored refresh token AND check expiration and GUID match.
@@ -87,8 +91,8 @@ namespace RPG_Login_API.Services
             }
 
             // SUCCESS: GENERATE RESPONSE AND UPDATE DATABASE | Generate response model update document in database with new refresh token.
-            bool isInitialLoginStep = (!isFullAccess);      // If refresh was full access, is NOT initial step, else IS and requires MFA.
-            LoginResponseModel response = GenerateLoginResponse(userAccount, isInitialLoginStep);
+            // IMPORTANT: Refresh tokens are only received on full login, so login response should return full access token.
+            LoginResponseModel response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
@@ -129,18 +133,27 @@ namespace RPG_Login_API.Services
                 return (401, "Invalid username/email or password, please try again.");
             }
 
-            // CHECK IF ACCOUNT LOCKED | Block the successful login if the account is temporarily locked (for either reason).
-            if (IsAccountCurrentlyLocked(userAccount) || DoesAccountHaveTooManyFailedLoginAttempts(userAccount.Username))
+            // PREVENT LOGIN IF ACCOUNT HAS TOO MANY FAILED LOGIN ATTEMPTS IN THE LAST FEW MINUTES
+            if (DoesAccountHaveTooManyFailedLoginAttempts(userAccount.Username))
             {
                 _logger.LogInformation($"Login failed: account is temporarily locked because of too many failed login attempts");
                 return (401, "Invalid username/email or password, please try again.");
             }
 
-            // SUCCESS: GENERATE RESPONSE AND UPDATE DATABASE | Generate response model update document in database with new refresh token.
+            // CORRECT CREDENTIALS, BUT ENSURE ACCOUNT NOT LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+                _logger.LogInformation($"Login failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {userAccount.Username})");
+                return (403, "Account currently locked for security reasons, please check account email.");
+            }
+
+            // SUCCESS: GENERATE LOGIN RESPONSE | Generate response for initial login step, but no refresh token.
             ClearFailedLoginAttemptsOnSuccess(userAccount.Username);
             LoginResponseModel response = GenerateLoginResponse(userAccount, isInitialLoginStep: true);
-            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"User login successful (username: {response.Username}) with login code {response.LoginStatusCode}");
             return (200, response);
@@ -159,8 +172,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Submit MFA code for login failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // Validate submitted code, differentiating between active and pending code based on submitted role.
@@ -181,9 +198,10 @@ namespace RPG_Login_API.Services
 
         public async Task<(int, object?)> UserRegisterAsync(string username, string email, string password)
         {
-            // TRIM WHITESPACE FROM BEGINNING AND END OF USERNAME/EMAIL
+            // TRIM WHITESPACE FROM BEGINNING AND END OF USERNAME, EMAIL, AND PASSWORD
             username = username.Trim();
             email = email.Trim();
+            password = password.Trim();
 
             // ENSURE USERNAME AND EMAIL NOT ALREADY IN USE | Query database for any existing account with matching username or email.
             bool isAvailable = await IsUsernameAvailableAsync(username);
@@ -215,17 +233,15 @@ namespace RPG_Login_API.Services
             }
 
             // CREATE NEW ACCOUNT MODEL | Username and email are unique (verified in controller), so create a new user document.
-            string refreshToken = _tokenService.GenerateRefreshToken(username, isFullAccess: false, durationDays: 30);
             UserAccountModel userAccount = new()
             {
                 Username = username,
                 PrimaryEmail = email,
                 PasswordHash = HashUtility.GenerateNewPasswordHash(password),
-                RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(refreshToken),   // Store hashed token in database.
+                RefreshTokenHash = string.Empty,                    // New account is not fully logged in, so no refresh token.
                 AccountCreatedTime = DateTime.UtcNow,
                 LastPasswordChangedTime = DateTime.UtcNow,
                 LastUsernameChangedTime = DateTime.UtcNow,
-                // ObjectId is auto generated, and other values are left default. In launcher status and time remain unset.
             };
             await _databaseService.InsertOneAsync(userAccount);
 
@@ -258,7 +274,7 @@ namespace RPG_Login_API.Services
 
 
 
-        public async Task<(int, object?)> UserResendEmailVerificationCode(string username, bool isForNewAccount)
+        public async Task<(int, object?)> UserResendEmailVerificationCodeAsync(string username)
         {
             // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
@@ -271,57 +287,57 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Resend email verification code failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
-            // RESEND EMAIL VERIFICATION CODE | Generate and send a new code, target email depending on context.
-            string targetEmail = (isForNewAccount) ? userAccount.PrimaryEmail : userAccount.PendingNewPrimaryEmail;
-            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(targetEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
+            // RESEND EMAIL VERIFICATION CODE | Generate and send a new code to primary email.
+            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
 
             // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
             return (code, message);
         }
 
-        public async Task<(int, object?)> UserVerifyAccountEmailAsync(string username, string confirmationCode, bool isForNewAccount)
+        public async Task<(int, object?)> UserVerifyEmailForNewAccountAsync(string username, string confirmationCode)
         {
             // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
-                _logger.LogInformation($"Email verification failed: account for username stored in access token not found in database (username: {username})");
+                _logger.LogInformation($"New account email verification failed: account for username stored in access token not found in database (username: {username})");
                 return (404, "Failed to find user account for the provided username.");
             }
 
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
-                _logger.LogInformation($"Email verification failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+                _logger.LogInformation($"New account email verification failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            string targetEmail = (isForNewAccount) ? userAccount.PrimaryEmail : userAccount.PendingNewPrimaryEmail;
-            if (!_emailCodeService.ValidateSubmittedCode(targetEmail, confirmationCode, ConfirmationCodeData.CodeContext.PrimaryEmailVerification))
+            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PrimaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.PrimaryEmailVerification))
             {
                 return (401, "Invalid or expired confirmation code.");
             }
 
-            // SUCCESS: GENERATE LOGIN RESPONSE | On successful email verification, re-generate both refresh and access token (like login).
-            var response = GenerateLoginResponse(userAccount, isForNewAccount); // Is initial login step for new account, else full access is full login.
-            response.PrimaryEmail = targetEmail;        // Manually update primary email in response.
+            // SUCCESS: GENERATE LOGIN RESPONSE | On successful new account email verification, generate login response (not full login yet).
+            var response = GenerateLoginResponse(userAccount, isInitialLoginStep: true);    // New account = initial login step
 
-            // UPDATE DATABASE | After token generation, update account document.
-            userAccount.PrimaryEmail = targetEmail;                    // Target email will be existing email OR pending new email, depending on context.
-            userAccount.PendingNewPrimaryEmail = string.Empty;         // Clear pending new email upon verification; verified email is now main email.
+            // UPDATE DATABASE | Update user account in database with newly-set 'email verified' flag.
             userAccount.IsEmailVerified = true;
-            userAccount.LastEmailChangedTime = DateTime.UtcNow; // Consider verification to be 'changed time'.
-            userAccount.InLauncherStatus = true;
-            userAccount.LastInLauncherTime = DateTime.UtcNow;
-            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
+            userAccount.LastEmailChangedTime = DateTime.UtcNow;     // Consider verification to be 'changed time'.
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-            _logger.LogInformation($"User email verification successful (username: {username}, verified email: {targetEmail})");
+            _logger.LogInformation($"User new account email verification successful (username: {username}, verified email: {userAccount.PrimaryEmail})");
             return (200, response);
         }
 
@@ -349,6 +365,10 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Forgot password attempt failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {userAccount.Username})");
                 return;
             }
@@ -379,6 +399,10 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED | Return GENERIC error response if account is locked.
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Initiate password reset failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {userAccount.Username})");
                 return (401, "Invalid or expired confirmation code.");
             }
@@ -402,6 +426,8 @@ namespace RPG_Login_API.Services
 
         public async Task<(int, object?)> UserSubmitNewPasswordAsync(string username, string newPassword)
         {
+            newPassword = newPassword.Trim();
+
             // FIND USER | Try to find user in database. Return false if we cannot find by username (should never happen).
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
@@ -413,8 +439,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Password reset failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // Ensure submitted password is not found in list of 100,000 most-used-passwords.
@@ -470,8 +500,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Username change failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {userAccount.Username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // ENSURE NON-PROFANE USERNAME | Deny any particularly profane username using ProfanityDetector library.
@@ -508,11 +542,9 @@ namespace RPG_Login_API.Services
             response.Username = newUsername;        // Manually update username in response.
 
             // UPDATE DOCUMENT AND DATABASE | Update username and last username changed time in document, then update database.
-            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            userAccount.InLauncherStatus = true;
-            userAccount.LastInLauncherTime = DateTime.UtcNow;
             userAccount.Username = newUsername;
             userAccount.LastUsernameChangedTime = DateTime.UtcNow;
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount);     // Query by old username.
 
             _logger.LogInformation($"User successfully changed username (old username: {existingUsername} | new username: {newUsername})");
@@ -534,8 +566,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Request email change failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // TRY TO SEND CODE TO EMAIL | Send a confirmation code to the account's existing email.
@@ -558,8 +594,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Initiate email change failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
@@ -586,7 +626,7 @@ namespace RPG_Login_API.Services
             return (200, response);
         }
 
-        public async Task<(int, object?)> UserSubmitNewEmailAsync(string username, string newEmail)
+        public async Task<(int, object?)> UserSubmitChangedEmailAsync(string username, string newEmail)
         {
             newEmail = newEmail.Trim();
 
@@ -601,8 +641,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Submit new email failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // VERIFY NEW EMAIL IS NOT THE SAME AS PREVIOUS
@@ -633,6 +677,90 @@ namespace RPG_Login_API.Services
             return (200, "Submit new email successful.");
         }
 
+        public async Task<(int, object?)> UserResendChangedEmailVerificationCodeAsync(string username)
+        {
+            // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Resend changed email verification code failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+                _logger.LogInformation($"Resend changed email verification code failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account currently locked for security reasons, please check account email.");
+            }
+
+            // RESEND EMAIL VERIFICATION CODE | Generate and send a new code, target email depending on context.
+            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.PendingNewPrimaryEmail,
+                ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
+
+            // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
+            return (code, message);
+        }
+
+        public async Task<(int, object?)> UserVerifyChangedEmailAsync(string username, string confirmationCode)
+        {
+            // FIND USER | Try to find user in database. We check for valid username in controller, so should always find an account.
+            var userAccount = await _databaseService.GetOneByUsernameAsync(username);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"Manual changed email verification failed: account for username stored in access token not found in database (username: {username})");
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+                _logger.LogInformation($"Manual changed email verification failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
+                return (403, "Account currently locked for security reasons, please check account email.");
+            }
+
+            // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
+            string targetEmail = userAccount.PendingNewPrimaryEmail;
+            if (!_emailCodeService.ValidateSubmittedCode(targetEmail, confirmationCode, ConfirmationCodeData.CodeContext.PrimaryEmailVerification))
+            {
+                return (401, "Invalid or expired confirmation code.");
+            }
+
+            // DOUBLE-CHECK EMAIL IS UNIQUE | Ensure new email is still unique before updating database.
+            bool isEmailAvailable = await IsEmailAvailableAsync(targetEmail);
+            if (!isEmailAvailable)
+            {
+                // Clear pending field (is not available).
+                userAccount.PendingNewPrimaryEmail = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+                _logger.LogInformation($"Manual changed email verification failed: email is already in use (username: {username}, email: {targetEmail})");
+                return (500, "An unexpected error occured during manual email change verification, please try again.");
+            }
+
+            // SUCCESS: GENERATE LOGIN RESPONSE | On successful primary email manual change, re-generate both refresh and access token (like login).
+            var response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);   // Already fully-logged-in.
+            response.PrimaryEmail = targetEmail;                                            // Manually update primary email in response.
+
+            // UPDATE DATABASE | After token generation, update account document.
+            userAccount.PrimaryEmail = targetEmail;
+            userAccount.PendingNewPrimaryEmail = string.Empty;      // Clear pending new email upon verification; verified email is now main email.
+            userAccount.LastEmailChangedTime = DateTime.UtcNow;     // Consider verification to be 'changed time'.
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);  // Might be empty string.
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            _logger.LogInformation($"User manual changed email verification successful (username: {username}, verified email: {userAccount.PrimaryEmail})");
+            return (200, response);
+        }
+
 
 
 
@@ -649,8 +777,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Setup MFA failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // Generate new encrypted MFA secret key and update document with this pending key.
@@ -679,8 +811,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Verify MFA setup failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // Validate submitted code against the pending key (verifying setup checks pending only).
@@ -716,6 +852,8 @@ namespace RPG_Login_API.Services
             userAccount.PendingMfaKey = string.Empty;
             userAccount.MfaRecoveryCodeHash = HashUtility.GenerateNewMfaRecoveryCodeHash(response.RecoveryCode);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
+            userAccount.InLauncherStatus = true;
+            userAccount.LastInLauncherTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"Verify MFA setup successful (username: {username})");
@@ -735,8 +873,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Recover MFA failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // Compare submitted recovery key against key in database.
@@ -772,8 +914,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Regenerate MFA recovery code failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // Generate full login response with newly-generated recovery code.
@@ -818,8 +964,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Submit secondary email failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // VERIFY NEW EMAIL IS NOT THE SAME AS PREVIOUS
@@ -864,13 +1014,17 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Resend secondary email verification code failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // RESEND EMAIL VERIFICATION CODE | Generate and send a new code, target email depending on context.
-            string targetEmail = userAccount.PendingNewSecondaryEmail;
-            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(targetEmail, ConfirmationCodeData.CodeContext.SecondaryEmailVerification);
+            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.PendingNewSecondaryEmail,
+                ConfirmationCodeData.CodeContext.SecondaryEmailVerification);
 
             // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
             return (code, message);
@@ -889,8 +1043,12 @@ namespace RPG_Login_API.Services
             // ENSURE ACCOUNT IS NOT CURRENTLY LOCKED
             if (IsAccountCurrentlyLocked(userAccount))
             {
+                // Ensure no refresh token remains if locked.
+                userAccount.RefreshTokenHash = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
                 _logger.LogInformation($"Secondary email verification failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {username})");
-                return (403, "Account is currently locked for security reasons, please try again later.");
+                return (403, "Account currently locked for security reasons, please check account email.");
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
@@ -900,16 +1058,26 @@ namespace RPG_Login_API.Services
                 return (401, "Invalid or expired confirmation code.");
             }
 
-            // SUCCESS | Generate full login response with newly-verified and ready-to-use secondary email.
-            var response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
-            response.SecondaryEmail = targetEmail;      // Manually update response after created.
+            // DOUBLE-CHECK EMAIL IS UNIQUE | Ensure new email is still unique before updating database.
+            bool isEmailAvailable = await IsEmailAvailableAsync(targetEmail);
+            if (!isEmailAvailable)
+            {
+                // Clear pending field (is not available).
+                userAccount.PendingNewSecondaryEmail = string.Empty;
+                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-            // SUCCESS: UPDATE DATABASE | Move pending secondary email to secondary email, then clear pending.
+                _logger.LogInformation($"Secondary email verification failed: email is already in use (username: {username}, email: {targetEmail})");
+                return (500, "An unexpected error occured during secondary email verification, please try again.");
+            }
+
+            // SUCCESS: GENERATE LOGIN RESPONSE | Generate full login response with newly-verified and ready-to-use secondary email.
+            var response = GenerateLoginResponse(userAccount, isInitialLoginStep: false);
+            response.SecondaryEmail = targetEmail;                                          // Manually update response after created.
+
+            // UPDATE DATABASE | Move pending secondary email to secondary email, then clear pending.
             userAccount.SecondaryEmail = targetEmail;
             userAccount.PendingNewSecondaryEmail = string.Empty;
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            userAccount.InLauncherStatus = true;
-            userAccount.LastInLauncherTime = DateTime.UtcNow;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"User secondary email verification successful (username: {username}, verified secondary email: {targetEmail})");
@@ -1003,7 +1171,8 @@ namespace RPG_Login_API.Services
         private bool IsAccountCurrentlyLocked(UserAccountModel userAccount)
         {
             // Simply compare the 'account locked until' timestamp against the current time.
-            if (userAccount.AccountLockedUntil > DateTime.UtcNow)
+            DateTime now = DateTime.UtcNow;
+            if (userAccount.AccountLockedUntil > now || userAccount.MfaHardResetLockedUntilTime > now)
             {
                 return true;
             }
@@ -1103,11 +1272,13 @@ namespace RPG_Login_API.Services
         /// <summary>
         /// Checks whether the provided email is available (i.e. not in use by another account). If in use by
         ///  another account, ensures that account is not a zombie; if the account IS a zombie, deletes it entirely.
+        ///  Checks primary and secondary email of all existing accounts.
         /// </summary>
         /// <param name="email"> The email to check the availability of. </param>
         /// <returns> True if the email is available, false otherwise. </returns>
         private async Task<bool> IsEmailAvailableAsync(string email)
         {
+            // First, check whether the email is in use as the primary email for an account.
             var existingAccount = await _databaseService.GetOneByEmailAsync(email);
             if (existingAccount != null)
             {
@@ -1121,7 +1292,7 @@ namespace RPG_Login_API.Services
                 return false;                   // Else was not zombie, so email is NOT available.
             }
 
-            // Check for secondary email.
+            // Check for secondary email (only checks for fully set, not pending).
             if (await _databaseService.IsSecondaryEmailInUseAsync(email))
             {
                 return false;                   // Secondary email can only be set if the account email is fully verified (not zombie).
@@ -1133,8 +1304,14 @@ namespace RPG_Login_API.Services
 
         private LoginResponseModel GenerateLoginResponse(UserAccountModel userAccount, bool isInitialLoginStep)
         {
+            // Double-check that the account is not currently locked.
+            if (IsAccountCurrentlyLocked(userAccount))
+            {
+                return new LoginResponseModel();    // Return empty, unusable login response model.
+            }
+
             // Generate login response based on account state.
-            int loginCode; string role;
+            int loginCode; string role; string refreshToken = string.Empty;
             if (!userAccount.IsEmailVerified)
             {
                 // If email not verified, code is 1 and a confirmation email must be sent.
@@ -1155,12 +1332,6 @@ namespace RPG_Login_API.Services
                 loginCode = 30;
                 role = TokenService.Roles.MfaNotEnabled;
             }
-            else if (userAccount.MfaHardResetLockedUntilTime > DateTime.UtcNow)
-            {
-                // If locked until later, then the account is effectively disabled for now.
-                loginCode = 40;
-                role = TokenService.Roles.LockedForMfaReset;
-            }
             else
             {
                 // Else account state is good (fully set up), so check whether we are awaiting MFA submission (pending login).
@@ -1173,19 +1344,18 @@ namespace RPG_Login_API.Services
                 {
                     loginCode = 0;
                     role = TokenService.Roles.FullAccess;
-                    userAccount.InLauncherStatus = true;
-                    userAccount.LastInLauncherTime = DateTime.UtcNow;
+                    refreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30);
                 }
             }
 
-            bool isFullAccess = (!isInitialLoginStep);  // Initial login step is NOT full access, else final step grants full access.
+            // Finally, create LoginResponseModel with our code and role (also potentially refresh token) created above.
             return new LoginResponseModel()
             {
                 Username = userAccount.Username,
                 PrimaryEmail = userAccount.PrimaryEmail,
                 SecondaryEmail = userAccount.SecondaryEmail,    // May be empty.
                 LoginStatusCode = loginCode,
-                RefreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, isFullAccess, durationDays: 30),
+                RefreshToken = refreshToken,
                 AccessToken = _tokenService.GenerateAccessToken(userAccount.Username, role, durationMinutes: 15),
                 AccessTokenExpiration = DateTime.UtcNow.AddMinutes(15)
             };
