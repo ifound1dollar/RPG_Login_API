@@ -51,11 +51,19 @@ namespace RPG_Login_API
             builder.Logging.ClearProviders().AddConsole();
 
             // Add our desired services. Registers them to enable constructor injection.
+            // NON-CONTROLLER SERVICES
+            builder.Services.AddSingleton<IUtilityService, UtilityService>();
             builder.Services.AddSingleton<IDatabaseService, DatabaseService>();
             builder.Services.AddSingleton<ITokenService, TokenService>();
             builder.Services.AddSingleton<IEmailCodeService, EmailCodeService>();
             builder.Services.AddSingleton<IMfaCodeService, MfaCodeService>();
-            builder.Services.AddSingleton<IUserService, UserService>(); // Token and Database services must be registered before this.
+            // CONTROLLER SERVICES
+            builder.Services.AddSingleton<ILoginService, LoginService>();
+            builder.Services.AddSingleton<INewAccountService, NewAccountService>();
+            builder.Services.AddSingleton<IResetPasswordService, ResetPasswordService>();
+            builder.Services.AddSingleton<IAccountService, AccountService>();
+            builder.Services.AddSingleton<IMfaSetupService, MfaSetupService>();
+            builder.Services.AddSingleton<ILauncherService, LauncherService>();
 
             // Add our controller(s). Adds an additional JSON option to remove the special naming policy from serialization
             //  behavior, which will retain PascalCase (as used by C#) rather than re-formatting to camelCase (the default).

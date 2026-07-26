@@ -1,6 +1,6 @@
 ﻿namespace RPG_Login_API.Models.UserResponses
 {
-    public class LoginResponseModel
+    public class AccessResponseModel
     {
         public string Username { get; set; } = string.Empty;
         public string PrimaryEmail { get; set; } = string.Empty;

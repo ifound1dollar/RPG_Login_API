@@ -81,18 +81,27 @@ namespace RPG_Login_API.Models.UserRequests
 
     public class ChangeUsernameRequestModel
     {
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$", ErrorMessage = "New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.")]
+        public string CurrentPassword { get; set; } = string.Empty;
+
         [RegularExpression(@"^[a-zA-Z0-9_ ]{3,16}$", ErrorMessage = "New username must be 3-16 characters and can only include letters, digits, underscores, and spaces.")]
         public string NewUsername { get; set; } = string.Empty;
     }
 
-    public class InitiateEmailChangeRequestModel
+    public class ChangePasswordRequestModel
     {
-        [StringLength(8, ErrorMessage = "Confirmation code must be length 8.")]
-        public string Code { get; set; } = string.Empty;
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$", ErrorMessage = "New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.")]
+        public string CurrentPassword { get; set; } = string.Empty;
+
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$", ErrorMessage = "New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.")]
+        public string NewPassword { get; set; } = string.Empty;
     }
 
     public class SubmitChangedEmailRequestModel
     {
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$", ErrorMessage = "New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.")]
+        public string CurrentPassword { get; set; } = string.Empty;
+
         [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "New email must be a valid email address.")]
         public string NewEmail { get; set; } = string.Empty;
     }
@@ -123,6 +132,9 @@ namespace RPG_Login_API.Models.UserRequests
 
     public class SubmitSecondaryEmailRequestModel
     {
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$", ErrorMessage = "New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.")]
+        public string CurrentPassword { get; set; } = string.Empty;
+
         [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "Secondary email must be a valid email address.")]
         public string SecondaryEmail { get; set; } = string.Empty;
     }

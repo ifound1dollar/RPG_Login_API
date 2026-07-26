@@ -20,15 +20,27 @@ namespace RPG_Login_API.Controllers
     [ApiController]
     public class UserController : Controller
     {
-        private readonly IUserService _service;
+        private readonly ILoginService _loginService;
+        private readonly INewAccountService _newAccountService;
+        private readonly IResetPasswordService _resetPasswordService;
+        private readonly IAccountService _accountService;
+        private readonly IMfaSetupService _mfaSetupService;
+        private readonly ILauncherService _launcherService;
         private readonly ILogger _logger;
 
-        public UserController(IUserService service, ILogger<UserController> logger)
+        public UserController(ILoginService loginService, INewAccountService newAccountService, IResetPasswordService resetPasswordService,
+            IAccountService accountService, IMfaSetupService mfaSetupService, ILauncherService launcherService, ILogger<UserController> logger)
         {
-            // Adding the LoginApiService object as a constructor parameter utilizes ASP.NET's built-in dependency
+            // Adding the services object as constructor parameters utilizes ASP.NET's built-in dependency
             //  injection system. The controller is effectively requesting the Service from the services container
             //  configured in Program.cs.
-            _service = service;
+            _loginService = loginService;
+            _newAccountService = newAccountService;
+            _resetPasswordService = resetPasswordService;
+            _accountService = accountService;
+            _mfaSetupService = mfaSetupService;
+            _launcherService = launcherService;
+
             _logger = logger;
         }
 
@@ -41,7 +53,7 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserLoginFromRefreshAsync([FromBody] RefreshLoginRequestModel request)
         {
-            (int code, object? response) = await _service.UserLoginFromRefreshAsync(request.RefreshToken);
+            (int code, object? response) = await _loginService.LoginFromRefreshAsync(request.RefreshToken);
             return StatusCode(code, response);
         }
 
@@ -52,7 +64,7 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserLoginAsync([FromBody] LoginRequestModel loginRequest)
         {
-            (int code, object? response) = await _service.UserLoginAsync(loginRequest.UsernameOrEmail, loginRequest.Password);
+            (int code, object? response) = await _loginService.LoginAsync(loginRequest.UsernameOrEmail, loginRequest.Password);
             return StatusCode(code, response);
         }
 
@@ -66,11 +78,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client submit MFA code, incorrectly formatted access token in request header");
+                _logger.LogInformation("submit MFA code for login failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserSubmitMfaCodeForLoginAsync(username, request.MfaCode);
+            (int code, object? response) = await _loginService.SubmitMfaCodeForLoginAsync(username, request.MfaCode);
             return StatusCode(code, response);
         }
 
@@ -81,7 +93,7 @@ namespace RPG_Login_API.Controllers
         [HttpPost]
         public async Task<ActionResult> UserRegisterAsync([FromBody] RegisterRequestModel registerRequest)
         {
-            (int code, object? response) = await _service.UserRegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
+            (int code, object? response) = await _newAccountService.RegisterAsync(registerRequest.Username, registerRequest.Email, registerRequest.Password);
             return StatusCode(code, response);
         }
 
@@ -95,11 +107,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client logout failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("logout failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserLogoutAsync(username);
+            (int code, object? response) = await _loginService.LogoutAsync(username);
             return StatusCode(code, response);
         }
 
@@ -113,12 +125,12 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client resend email verification code failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("resend email verification code failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
             // Email not verified implies is for new account, else full access is for manual email change.
-            (int code, object? response) = await _service.UserResendEmailVerificationCodeAsync(username);
+            (int code, object? response) = await _newAccountService.ResendEmailVerificationCodeAsync(username);
             return StatusCode(code, response);
         }
 
@@ -132,12 +144,12 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client email verification failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("new account email verification failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
             // Email not verified implies is for new account, else full access is for manual email change.
-            (int code, object? response) = await _service.UserVerifyEmailForNewAccountAsync(username, request.Code);
+            (int code, object? response) = await _newAccountService.VerifyEmailForNewAccountAsync(username, request.Code);
             return StatusCode(code, response);
         }
 
@@ -152,11 +164,9 @@ namespace RPG_Login_API.Controllers
             //  for malicious actors to lookup existing usernames/emails. By always returning 200 (OK), users cannot
             //  know whether an account is associated with the username/email.
 
-            await _service.UserForgotPasswordAsync(request.UsernameOrEmail);
+            await _resetPasswordService.ForgotPasswordAsync(request.UsernameOrEmail);
             return Ok();
         }
-
-
 
         [AllowAnonymous]        // Allow anonymous to enable forgot password functionality; request must include a confirmation code.
         [Route("initiate-password-reset")]
@@ -167,11 +177,9 @@ namespace RPG_Login_API.Controllers
             //  that only valid users can receive this access token by requiring a short-duration one-time-use confirmation code
             //  alongside the passed-in account username or email.
 
-            (int code, object? response) = await _service.UserInitiatePasswordResetAsync(request.UsernameOrEmail, request.Code);
+            (int code, object? response) = await _resetPasswordService.InitiateResetPasswordAsync(request.UsernameOrEmail, request.Code);
             return StatusCode(code, response);
         }
-
-
 
         [Authorize(Roles = TokenService.Roles.ResetPassword)]       // Only allow endpoint access for reset_password token roles.
         [Route("submit-new-password")]
@@ -181,11 +189,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client submit new password failed, incorrectly formatted reset (access) token in request header");
+                _logger.LogInformation("submit reset password failed, incorrectly formatted reset (access) token in request header");
                 return BadRequest("Malformed password reset token in API request.");
             }
 
-            (int code, object? response) = await _service.UserSubmitNewPasswordAsync(username, request.NewPassword);
+            (int code, object? response) = await _resetPasswordService.SubmitResetPasswordAsync(username, request.NewPassword);
             return StatusCode(code, response);
         }
 
@@ -199,56 +207,31 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client username change failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("change username failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserChangeUsernameAsync(username, request.NewUsername);
+            (int code, object? response) = await _accountService.ChangeUsernameAsync(username, request.CurrentPassword, request.NewUsername);
             return StatusCode(code, response);
         }
 
-
-
-        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow email change request if full access.
-        [Route("request-email-change")]
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow password change if user has full access.
+        [Route("change-password")]
         [HttpPost]
-        public async Task<ActionResult> UserRequestEmailChangeAsync()
-        {
-            // This endpoint simply generates a confirmation code for the user stored in the access token.
-            // IMPORTANT: Because this is only accessible by fully-logged-in users, we can return actual success code and message.
-
-            // Retrieve account data (username, role, guid) from access token in request header.
-            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
-            {
-                _logger.LogInformation("Client request email change failed, incorrectly formatted access token in request header");
-                return BadRequest("Malformed access token in API request.");
-            }
-
-            (int code, object? response) = await _service.UserRequestEmailChangeAsync(username);
-            return StatusCode(code, response);
-        }
-
-
-
-        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow actually initiating email change if full access.
-        [Route("initiate-email-change")]
-        [HttpPost]
-        public async Task<ActionResult> UserInitiateEmailChangeAsync(InitiateEmailChangeRequestModel request)
+        public async Task<ActionResult> UserChangePasswordAsync(ChangePasswordRequestModel request)
         {
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client initiate email change failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("change password failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserInitiateEmailChangeAsync(username, request.Code);
+            (int code, object? response) = await _accountService.ChangePasswordAsync(username, request.CurrentPassword, request.NewPassword);
             return StatusCode(code, response);
         }
 
-
-
-        [Authorize(Roles = TokenService.Roles.ChangeEmail)]
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow email change if user has full access.
         [Route("submit-changed-email")]
         [HttpPost]
         public async Task<ActionResult> UserSubmitChangedEmailAsync(SubmitChangedEmailRequestModel request)
@@ -256,17 +239,15 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client submit changed email failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("submit changed email failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserSubmitChangedEmailAsync(username, request.NewEmail);
+            (int code, object? response) = await _accountService.SubmitChangedEmailAsync(username, request.CurrentPassword, request.NewEmail);
             return StatusCode(code, response);
         }
 
-
-
-        [Authorize(Roles = TokenService.Roles.ChangeEmail)]     // Manual change only.
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow email change if user has full access.
         [Route("resend-changed-email-verification-code")]
         [HttpPost]
         public async Task<ActionResult> UserResendChangedEmailVerificationCodeAsync()
@@ -274,18 +255,16 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client resend changed email verification code failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("resend changed email verification code failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
             // Email not verified implies is for new account, else full access is for manual email change.
-            (int code, object? response) = await _service.UserResendChangedEmailVerificationCodeAsync(username);
+            (int code, object? response) = await _accountService.ResendChangedEmailVerificationCodeAsync(username);
             return StatusCode(code, response);
         }
 
-
-
-        [Authorize(Roles = TokenService.Roles.ChangeEmail)]     // Manual change only.
+        [Authorize(Roles = TokenService.Roles.FullAccess)]      // Only allow email change if user has full access.
         [Route("verify-changed-email")]
         [HttpPost]
         public async Task<ActionResult> UserVerifyChangedEmailAsync(VerifyEmailRequestModel request)
@@ -293,12 +272,12 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client verify changed email failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("verify changed email failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
             // Email not verified implies is for new account, else full access is for manual email change.
-            (int code, object? response) = await _service.UserVerifyChangedEmailAsync(username, request.Code);
+            (int code, object? response) = await _accountService.VerifyChangedEmailAsync(username, request.Code);
             return StatusCode(code, response);
         }
 
@@ -312,11 +291,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client setup MFA failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("begin MFA setup failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserSetupMfaAsync(username);
+            (int code, object? response) = await _mfaSetupService.SetupMfaAsync(username);
             return StatusCode(code, response);
         }
 
@@ -330,11 +309,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client setup MFA failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("verify MFA setup failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserVerifyMfaSetupAsync(username, request.MfaCode);
+            (int code, object? response) = await _mfaSetupService.VerifyMfaSetupAsync(username, request.MfaCode);
             return StatusCode(code, response);
         }
 
@@ -348,11 +327,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client recover MFA failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("recover MFA configuration failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserRecoverMfaAsync(username, request.RecoveryCode);
+            (int code, object? response) = await _mfaSetupService.RecoverMfaAsync(username, request.RecoveryCode);
             return StatusCode(code, response);
         }
 
@@ -366,11 +345,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client recover MFA failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("regenerate MFA recovery code failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserRegenerateMfaRecoveryCodeAsync(username);
+            (int code, object? response) = await _mfaSetupService.RegenerateMfaRecoveryCodeAsync(username);
             return StatusCode(code, response);
         }
 
@@ -386,11 +365,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client submit secondary email failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("submit secondary email failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserSubmitSecondaryEmailAsync(username, request.SecondaryEmail);
+            (int code, object? response) = await _accountService.SubmitSecondaryEmailAsync(username, request.CurrentPassword, request.SecondaryEmail);
             return StatusCode(code, response);
         }
 
@@ -402,11 +381,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client resend secondary email verification code failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("resend secondary email verification code failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserResendSecondaryEmailVerificationCodeAsync(username);
+            (int code, object? response) = await _accountService.ResendSecondaryEmailVerificationCodeAsync(username);
             return StatusCode(code, response);
         }
 
@@ -418,11 +397,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client recover MFA failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("verify secondary email failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserVerifySecondaryEmailAsync(username, request.Code);
+            (int code, object? response) = await _accountService.VerifySecondaryEmailAsync(username, request.Code);
             return StatusCode(code, response);
         }
 
@@ -438,11 +417,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client ping in launcher failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("play game from launcher failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserPlayGameAsync(username);
+            (int code, object? response) = await _launcherService.PlayGameFromLauncherAsync(username);
             return StatusCode(code, response);
         }
 
@@ -458,11 +437,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client ping in launcher failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("ping in launcher failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserPingInLauncherAsync(username);
+            (int code, object? response) = await _launcherService.PingInLauncherAsync(username);
             return (code == 204) ? NoContent() : StatusCode(code, response);
         }
 
@@ -474,11 +453,11 @@ namespace RPG_Login_API.Controllers
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
             {
-                _logger.LogInformation("Client notify launcher exit failed, incorrectly formatted access token in request header");
+                _logger.LogInformation("notify launcher exit failed, incorrectly formatted access token in request header");
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _service.UserNotifyLauncherExitAsync(username);
+            (int code, object? response) = await _launcherService.NotifyLauncherExitAsync(username);
             return (code == 204) ? NoContent() : StatusCode(code, response);
         }
 

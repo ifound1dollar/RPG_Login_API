@@ -23,13 +23,11 @@ namespace RPG_Login_API.Services
         {
             public const string EmailNotVerified = "email_not_verified";
             public const string MfaNotEnabled = "mfa_not_enabled";
-            public const string ResetPassword = "reset_password";
-            public const string ChangeEmail = "change_email";
             public const string AwaitingMfa = "awaiting_mfa";
             public const string FullAccess = "full_access";
+            public const string ResetPassword = "reset_password";   // UNIQUE ROLE
 
-            public const string Any = EmailNotVerified + "," + MfaNotEnabled + "," + ResetPassword + ","
-                + ChangeEmail + "," + AwaitingMfa + "," + FullAccess;
+            public const string Any = EmailNotVerified + "," + MfaNotEnabled + "," + AwaitingMfa + "," + FullAccess + "," + ResetPassword;
         }
 
         private readonly byte[] _jwtKeyBytes;
@@ -131,7 +129,15 @@ namespace RPG_Login_API.Services
             if (!TryGetJwtTokenFromString(_handler, tokenString, out var token)) return false;
 
             // Assign username with valid string or null, returning true if valid and false if null.
-            return TryReadJwtTokenData(token, out username);
+            if (TryReadJwtTokenData(token, out username))
+            {
+                return true;
+            }
+            else
+            {
+                _logger.LogInformation($"Refresh login failed: malformed (unreadable) refresh token in request");
+                return false;
+            }
         }
 
         public bool ValidateToken(string submittedToken, string storedTokenHash, string guid = "")

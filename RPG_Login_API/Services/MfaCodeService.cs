@@ -53,7 +53,21 @@ namespace RPG_Login_API.Services
             var totp = new Totp(rawKey);
             bool isValid = totp.VerifyTotp(mfaCode, out var timeStepMatched, VerificationWindow.RfcSpecifiedNetworkDelay);
 
-            return isValid;
+            if (isValid)
+            {
+                return true;
+            }
+
+            // If not valid, log and return false.
+            if (isForActive)
+            {
+                _logger.LogInformation($"submit MFA code for login failed: incorrect MFA code submitted by user (username: {userAccount.Username})");
+            }
+            else
+            {
+                _logger.LogInformation($"verify MFA setup failed: incorrect MFA code submitted by user (username: {userAccount.Username})");
+            }
+            return false;
         }
 
         public bool ValidateRecoveryCode(UserAccountModel userAccount, string recoveryCode)
@@ -66,7 +80,12 @@ namespace RPG_Login_API.Services
             string hashedCode = userAccount.MfaRecoveryCodeHash;
             bool isValid = HashUtility.CompareMfaRecoveryCodeToHash(cleanCode, hashedCode);
 
-            return isValid;
+            if (!isValid)
+            {
+                _logger.LogInformation($"recover MFA configuration failed: submitted recovery key does not match stored key (username: {userAccount.Username})");
+                return false;
+            }
+            return true;
         }
 
         public string GenerateMfaSecretKeyEncryptedBase64()
