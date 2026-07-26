@@ -24,7 +24,7 @@ namespace RPG_Login_API.Services
 
 
 
-        public async Task<(int, object?)> SetupMfaAsync(string username)
+        public async Task<(int, object?)> BeginMfaSetup(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
             var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "begin MFA setup");

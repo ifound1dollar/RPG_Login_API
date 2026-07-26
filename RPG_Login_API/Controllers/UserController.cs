@@ -169,9 +169,9 @@ namespace RPG_Login_API.Controllers
         }
 
         [AllowAnonymous]        // Allow anonymous to enable forgot password functionality; request must include a confirmation code.
-        [Route("initiate-password-reset")]
+        [Route("initiate-reset-password")]
         [HttpPost]
-        public async Task<ActionResult> UserInitiatePasswordResetAsync([FromBody] InitiatePasswordResetRequestModel request)
+        public async Task<ActionResult> UserInitiateResetPasswordAsync([FromBody] InitiatePasswordResetRequestModel request)
         {
             // NOTE: Initiating a password reset returns only an access token with the ResetPassword role. This endpoint ensures 
             //  that only valid users can receive this access token by requiring a short-duration one-time-use confirmation code
@@ -182,9 +182,9 @@ namespace RPG_Login_API.Controllers
         }
 
         [Authorize(Roles = TokenService.Roles.ResetPassword)]       // Only allow endpoint access for reset_password token roles.
-        [Route("submit-new-password")]
+        [Route("submit-reset-password")]
         [HttpPost]
-        public async Task<ActionResult> UserResetPasswordAsync([FromBody] PasswordResetRequestModel request)
+        public async Task<ActionResult> UserSubmitResetPasswordAsync([FromBody] PasswordResetRequestModel request)
         {
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
@@ -284,9 +284,9 @@ namespace RPG_Login_API.Controllers
 
 
         [Authorize(Roles = TokenService.Roles.MfaNotEnabled + "," + TokenService.Roles.FullAccess)]
-        [Route("setup-mfa")]
+        [Route("begin-mfa-setup")]
         [HttpPost]
-        public async Task<ActionResult> UserSetupMfa()
+        public async Task<ActionResult> UserBeginMfaSetup()
         {
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
@@ -295,7 +295,7 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _mfaSetupService.SetupMfaAsync(username);
+            (int code, object? response) = await _mfaSetupService.BeginMfaSetup(username);
             return StatusCode(code, response);
         }
 
