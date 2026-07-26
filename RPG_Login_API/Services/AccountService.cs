@@ -132,7 +132,7 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"change password successful (username: {username})");
-            return (200, "Password change successful.");
+            return (200, response);
         }
 
         public async Task<(int, object?)> SubmitChangedEmailAsync(string username, string currentPassword, string newEmail)
