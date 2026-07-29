@@ -1,4 +1,5 @@
-﻿using RPG_Login_API.Models.UserResponses;
+﻿using RPG_Login_API.Models.MongoDB;
+using RPG_Login_API.Models.UserResponses;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 using System.Collections.Concurrent;
@@ -13,15 +14,17 @@ namespace RPG_Login_API.Services
         private readonly IDatabaseService _databaseService;
         private readonly ITokenService _tokenService;
         private readonly IMfaCodeService _mfaCodeService;
+        private readonly IEmailService _emailService;
         private readonly IUtilityService _utilityService;
         private readonly ILogger _logger;
 
         public LoginService(IDatabaseService databaseService, ITokenService tokenService, IMfaCodeService mfaCodeService,
-            IUtilityService utilityService, ILogger<LoginService> logger)
+            IEmailService emailService, IUtilityService utilityService, ILogger<LoginService> logger)
         {
             _databaseService = databaseService;
             _tokenService = tokenService;
             _mfaCodeService = mfaCodeService;
+            _emailService = emailService;
             _utilityService = utilityService;
 
             _logger = logger;
@@ -38,7 +41,7 @@ namespace RPG_Login_API.Services
             }
 
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "refresh login");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "refresh login");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -107,8 +110,11 @@ namespace RPG_Login_API.Services
                 return (403, "Account currently locked for security reasons, please check account email.");
             }
 
-            // SUCCESS: GENERATE LOGIN RESPONSE | Generate response for initial login step, but no refresh token.
+            // UNLOCK ACCOUNT IF WAS LOCKED FOR MFA RESET (BUT NO LONGER IS LOCKED) AND CLEAR FAILED LOGIN ATTEMPTS
+            await UnlockAccountAfterLockedTimeEnded(userAccount);
             ClearFailedLoginAttemptsOnSuccess(userAccount.Username);
+
+            // SUCCESS: GENERATE LOGIN RESPONSE | Generate response for initial login step, but no refresh token.
             AccessResponseModel response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: true);
 
             _logger.LogInformation($"initial login step successful (username: {response.Username}) with login code {response.LoginStatusCode}");
@@ -118,7 +124,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> SubmitMfaCodeForLoginAsync(string username, string mfaCode)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "submit MFA code for login");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "submit MFA code for login");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -148,15 +154,13 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> LogoutAsync(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "logout");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "logout");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
             }
 
             // UPDATE DATABASE | Remove stored refresh token and update in launcher status and time.
-            userAccount.InLauncherStatus = false;
-            userAccount.LastInLauncherTime = DateTime.UtcNow;   // Should update here to be safe.
             userAccount.RefreshTokenHash = string.Empty;
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
@@ -224,6 +228,34 @@ namespace RPG_Login_API.Services
 
             // Return false if there is no entry for the passed-in username.
             return false;
+        }
+
+        /// <summary>
+        /// Checks whether the account was previously locked for MFA hard reset, fully unlocking it if so.
+        ///  Clears the current MFA setup and all hard reset fields in the database, awaiting the update
+        ///  then returning. Does nothing if there is no MFA hard reset cancel code in the database.
+        /// </summary>
+        /// <param name="userAccount"> The user account that will be unlocked, if applicable. </param>
+        private async Task UnlockAccountAfterLockedTimeEnded(UserAccountModel userAccount)
+        {
+            // Do nothing if no MFA cancel code exists (was not locked in the first place).
+            if (string.IsNullOrEmpty(userAccount.MfaHardResetCancelCode)) return;
+
+            // Remove the current MFA setup and all hard reset data.
+            userAccount.ActiveMfaKey = string.Empty;
+            userAccount.PendingMfaKey = string.Empty;
+            userAccount.MfaRecoveryCodeHash = string.Empty;
+            userAccount.MfaHardResetInitiatedTime = DateTime.MinValue;
+            userAccount.MfaHardResetLockedUntilTime = DateTime.MinValue;
+            userAccount.MfaHardResetCancelCode = string.Empty;
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // Notify both emails that the account's MFA setup has been hard reset.
+            _ = _emailService.SendMfaHardResetCompletedNotifToEmailAsync(userAccount.PrimaryEmail);
+            if (!string.IsNullOrEmpty(userAccount.SecondaryEmail))
+            {
+                _ = _emailService.SendMfaHardResetCompletedNotifToEmailAsync(userAccount.SecondaryEmail);
+            }
         }
 
         /// <summary>

@@ -10,18 +10,18 @@ namespace RPG_Login_API.Services
     {
         private readonly IDatabaseService _databaseService;
         private readonly ITokenService _tokenService;
-        private readonly IEmailCodeService _emailCodeService;
+        private readonly IEmailService _emailService;
         private readonly ILogger _logger;
 
         private readonly ProfanityFilter.ProfanityFilter _profanityFilter;
         private readonly HashSet<string> _bannedPasswords;
 
-        public UtilityService(IDatabaseService databaseService, ITokenService tokenService, IEmailCodeService emailCodeService,
+        public UtilityService(IDatabaseService databaseService, ITokenService tokenService, IEmailService emailCodeService,
             ILogger<UtilityService> logger)
         {
             _databaseService = databaseService;
             _tokenService = tokenService;
-            _emailCodeService = emailCodeService;
+            _emailService = emailCodeService;
 
             _logger = logger;
 
@@ -36,15 +36,25 @@ namespace RPG_Login_API.Services
 
 
 
-        public async Task<UserAccountModel?> TryRetrieveAccountAsync(string username, string context)
+        public async Task<UserAccountModel?> TryRetrieveAccountByUsernameAsync(string username, string context)
         {
             var userAccount = await _databaseService.GetOneByUsernameAsync(username);
             if (userAccount == null)
             {
-                _logger.LogInformation($"{context} failed: account for username stored in refresh token not found in database (username: {username})");
+                _logger.LogInformation($"{context} failed: could not find account in database for provided username (username: {username})");
                 return null;
             }
+            return userAccount;
+        }
 
+        public async Task<UserAccountModel?> TryRetrieveAccountByEmailAsync(string accountEmail, string context)
+        {
+            var userAccount = await _databaseService.GetOneByEmailAsync(accountEmail);
+            if (userAccount == null)
+            {
+                _logger.LogInformation($"{context} failed: could not find account in database for provided email (email: {accountEmail})");
+                return null;
+            }
             return userAccount;
         }
 
@@ -74,14 +84,14 @@ namespace RPG_Login_API.Services
                 // If email not verified, code is 1 and a confirmation email must be sent.
                 loginCode = 10;
                 role = TokenService.Roles.EmailNotVerified;
-                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
+                _ = _emailService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
             }
             else if (userAccount.DoesPasswordNeedReset)
             {
                 // If password must be reset for security reasons, code is 2 and confirmation email must be sent.
                 loginCode = 20;
                 role = TokenService.Roles.ResetPassword;
-                _ = _emailCodeService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PasswordReset);
+                _ = _emailService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PasswordReset);
             }
             else if (string.IsNullOrEmpty(userAccount.ActiveMfaKey))
             {

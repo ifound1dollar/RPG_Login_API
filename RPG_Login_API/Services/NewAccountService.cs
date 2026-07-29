@@ -9,14 +9,14 @@ namespace RPG_Login_API.Services
     public class NewAccountService : INewAccountService
     {
         private readonly IDatabaseService _databaseService;
-        private readonly IEmailCodeService _emailCodeService;
+        private readonly IEmailService _emailCodeService;
         private readonly IUtilityService _utilityService;
         private readonly ILogger _logger;
 
         private readonly ProfanityFilter.ProfanityFilter _profanityFilter;
         private readonly HashSet<string> _bannedPasswords;
 
-        public NewAccountService(IDatabaseService databaseService, IEmailCodeService emailCodeService,
+        public NewAccountService(IDatabaseService databaseService, IEmailService emailCodeService,
             IUtilityService utilityService, ILogger<NewAccountService> logger)
         {
             _databaseService = databaseService;
@@ -90,7 +90,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> ResendEmailVerificationCodeAsync(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "resend email verification code");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "resend email verification code");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -106,13 +106,14 @@ namespace RPG_Login_API.Services
             (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
 
             // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
+            _logger.LogInformation($"resend email verification code successful (username: {username})");
             return (code, message);
         }
 
         public async Task<(int, object?)> VerifyEmailForNewAccountAsync(string username, string confirmationCode)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "new account email verification");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "new account email verification");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");

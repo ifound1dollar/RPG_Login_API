@@ -8,11 +8,11 @@ namespace RPG_Login_API.Services
     public class AccountService : IAccountService
     {
         private readonly IDatabaseService _databaseService;
-        private readonly IEmailCodeService _emailCodeService;
+        private readonly IEmailService _emailCodeService;
         private readonly IUtilityService _utilityService;
         private readonly ILogger _logger;
 
-        public AccountService(IDatabaseService databaseService, IEmailCodeService emailCodeService, IUtilityService utilityService,
+        public AccountService(IDatabaseService databaseService, IEmailService emailCodeService, IUtilityService utilityService,
             ILogger<AccountService> logger)
         {
             _databaseService = databaseService;
@@ -29,7 +29,7 @@ namespace RPG_Login_API.Services
             newUsername = newUsername.Trim();
 
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(existingUsername, "change username");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(existingUsername, "change username");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -90,7 +90,7 @@ namespace RPG_Login_API.Services
             newPassword = newPassword.Trim();
 
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "change password");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "change password");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -140,7 +140,7 @@ namespace RPG_Login_API.Services
             newEmail = newEmail.Trim();
 
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "submit changed email");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "submit changed email");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -184,7 +184,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> ResendChangedEmailVerificationCodeAsync(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "resend changed email verification code");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "resend changed email verification code");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -207,7 +207,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> VerifyChangedEmailAsync(string username, string confirmationCode)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "verify changed email");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "verify changed email");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -255,7 +255,7 @@ namespace RPG_Login_API.Services
             secondaryEmail = secondaryEmail.Trim();
 
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "submit secondary email");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "submit secondary email");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -294,7 +294,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> ResendSecondaryEmailVerificationCodeAsync(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "resend secondary email verification code");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "resend secondary email verification code");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -317,7 +317,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> VerifySecondaryEmailAsync(string username, string confirmationCode)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "verify secondary email");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "verify secondary email");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");

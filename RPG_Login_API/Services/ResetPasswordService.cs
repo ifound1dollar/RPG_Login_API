@@ -9,12 +9,12 @@ namespace RPG_Login_API.Services
     public class ResetPasswordService : IResetPasswordService
     {
         private readonly IDatabaseService _databaseService;
-        private readonly IEmailCodeService _emailCodeService;
+        private readonly IEmailService _emailCodeService;
         private readonly ITokenService _tokenService;
         private readonly IUtilityService _utilityService;
         private readonly ILogger _logger;
 
-        public ResetPasswordService(IDatabaseService databaseService, IEmailCodeService emailCodeService, ITokenService tokenService,
+        public ResetPasswordService(IDatabaseService databaseService, IEmailService emailCodeService, ITokenService tokenService,
             IUtilityService utilityService, ILogger<ResetPasswordService> logger)
         {
             _databaseService = databaseService;
@@ -103,7 +103,7 @@ namespace RPG_Login_API.Services
             newPassword = newPassword.Trim();
 
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "submit reset password");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "submit reset password");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");

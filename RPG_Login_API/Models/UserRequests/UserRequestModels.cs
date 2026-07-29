@@ -128,7 +128,7 @@ namespace RPG_Login_API.Models.UserRequests
 
 
 
-    // RECOVERY
+    // SECONDARY EMAIL
 
     public class SubmitSecondaryEmailRequestModel
     {
@@ -143,5 +143,31 @@ namespace RPG_Login_API.Models.UserRequests
     {
         [StringLength(8, ErrorMessage = "Confirmation code must be length 8.")]
         public string Code { get; set; } = string.Empty;
+    }
+
+
+
+    // MFA HARD RESET
+
+    public class RequestMfaHardResetRequestModel
+    {
+        public bool IsForPrimaryEmail { get; set; } = true;
+    }
+
+    public class InitiateMfaHardResetRequestModel
+    {
+        public bool IsForPrimaryEmail { get; set; } = true;
+
+        [StringLength(8, ErrorMessage = "Confirmation code must be length 8.")]
+        public string Code { get; set; } = string.Empty;
+    }
+
+    public class CancelMfaHardResetRequestModel
+    {
+        [Required(ErrorMessage = "A non-empty username is required.")]
+        public string Username { get; set; } = string.Empty;
+
+        [StringLength(32, ErrorMessage = "Cancel code must be length 32.")]
+        public string CancelCode { get; set; } = string.Empty;
     }
 }

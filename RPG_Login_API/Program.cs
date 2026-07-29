@@ -55,7 +55,7 @@ namespace RPG_Login_API
             builder.Services.AddSingleton<IUtilityService, UtilityService>();
             builder.Services.AddSingleton<IDatabaseService, DatabaseService>();
             builder.Services.AddSingleton<ITokenService, TokenService>();
-            builder.Services.AddSingleton<IEmailCodeService, EmailCodeService>();
+            builder.Services.AddSingleton<IEmailService, EmailService>();
             builder.Services.AddSingleton<IMfaCodeService, MfaCodeService>();
             // CONTROLLER SERVICES
             builder.Services.AddSingleton<ILoginService, LoginService>();

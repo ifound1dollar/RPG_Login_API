@@ -1,7 +1,9 @@
-﻿using RPG_Login_API.Models.MongoDB;
+﻿using RPG_Login_API.Data;
+using RPG_Login_API.Models.MongoDB;
 using RPG_Login_API.Models.UserResponses;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
+using System.Security.Cryptography;
 
 namespace RPG_Login_API.Services
 {
@@ -9,14 +11,16 @@ namespace RPG_Login_API.Services
     {
         private readonly IDatabaseService _databaseService;
         private readonly IMfaCodeService _mfaCodeService;
+        private readonly IEmailService _emailService;
         private readonly IUtilityService _utilityService;
         private readonly ILogger _logger;
 
-        public MfaSetupService(IDatabaseService databaseService, IMfaCodeService mfaCodeService, IUtilityService utilityService,
-            ILogger<MfaSetupService> logger)
+        public MfaSetupService(IDatabaseService databaseService, IMfaCodeService mfaCodeService, IEmailService emailService,
+            IUtilityService utilityService, ILogger<MfaSetupService> logger)
         {
             _databaseService = databaseService;
             _mfaCodeService = mfaCodeService;
+            _emailService = emailService;
             _utilityService = utilityService;
 
             _logger = logger;
@@ -27,7 +31,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> BeginMfaSetup(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "begin MFA setup");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "begin MFA setup");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -54,7 +58,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> VerifyMfaSetupAsync(string username, string mfaCode)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "verify MFA setup");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "verify MFA setup");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -99,7 +103,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> RecoverMfaAsync(string username, string recoveryKey)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "recover MFA configuration");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "recover MFA configuration");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -132,7 +136,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> RegenerateMfaRecoveryCodeAsync(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "regenerate MFA recovery code");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "regenerate MFA recovery code");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -160,22 +164,143 @@ namespace RPG_Login_API.Services
             return (200, response);
         }
 
-        public async Task<(int, object?)> RequestMfaHardResetAsync(string username)
+        public async Task<(int, object?)> RequestMfaHardResetAsync(string username, bool isForPrimaryEmail)
         {
-            // TODO: IMPLEMENT REQUEST MFA HARD RESET
-            throw new NotImplementedException();
+            // FIND ACCOUNT | Try to retrieve user account from username.
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "request MFA hard reset");
+            if (userAccount == null)
+            {
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT NOT LOCKED | Logs and clears refresh token in method if locked.
+            if (!(await _utilityService.EnsureAccountIsNotLockedAsync(userAccount, "request MFA hard reset")))
+            {
+                return (403, "Account currently locked for security reasons, please check account email.");
+            }
+
+            // GET VALID EMAIL TARGET | Get primary or secondary email target, returning if secondary does not exist.
+            string targetEmail = GetValidTargetEmailForMfaHardResetRequest(userAccount, isForPrimaryEmail);
+            if (string.IsNullOrEmpty(targetEmail))          // If empty, then there was no secondary email.
+            {
+                return (404, "Tried to send MFA hard reset request to nonexistent secondary email.");
+            }
+
+            // ACTUALLY SEND REQUEST EMAIL | Send request MFA reset email to the target email.
+            (int code, string message) = await _emailService.SendMfaHardResetRequestToEmailAsync(targetEmail, isForPrimaryEmail,
+                ConfirmationCodeData.CodeContext.MfaHardReset);
+
+            // We actually utilize the 'send code' response because this endpoint is only accessible to validated users (partial login).
+            _logger.LogInformation($"request MFA hard reset successful (username: {username}");
+            return (code, message);
         }
 
-        public async Task<(int, object?)> InitiateMfaHardResetAsync(string username, string confirmationCode)
+        public async Task<(int, object?)> ResendMfaHardResetCodeAsync(string username, bool isForPrimaryEmail)
         {
-            // TODO: IMPLEMENT INITIATE MFA HARD RESET
-            throw new NotImplementedException();
+            // FIND ACCOUNT | Try to retrieve user account from username.
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "resend MFA hard reset code");
+            if (userAccount == null)
+            {
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT NOT LOCKED | Logs and clears refresh token in method if locked.
+            if (!(await _utilityService.EnsureAccountIsNotLockedAsync(userAccount, "resend MFA hard reset code")))
+            {
+                return (403, "Account currently locked for security reasons, please check account email.");
+            }
+
+            // GET VALID EMAIL TARGET | Get primary or secondary email target, returning if secondary does not exist.
+            string targetEmail = GetValidTargetEmailForMfaHardResetRequest(userAccount, isForPrimaryEmail);
+            if (string.IsNullOrEmpty(targetEmail))          // If empty, then there was no secondary email.
+            {
+                return (404, "Tried to send MFA hard reset request to nonexistent secondary email.");
+            }
+
+            // ACTUALLY SEND REQUEST EMAIL | Send request MFA reset email to the target email.
+            (int code, string message) = await _emailService.SendMfaHardResetRequestToEmailAsync(targetEmail, isForPrimaryEmail,
+                ConfirmationCodeData.CodeContext.MfaHardReset);
+
+            // We actually utilize the 'send code' response because this endpoint is only accessible to validated users (partial login).
+            _logger.LogInformation($"resend MFA hard reset code successful (username: {username})");
+            return (code, message);
         }
 
-        public async Task CancelMfaHardResetAsync(string username)
+        public async Task<(int, object?)> InitiateMfaHardResetAsync(string username, bool isForPrimaryEmail, string confirmationCode)
         {
-            // TODO: IMPLEMENT CANCEL MFA HARD RESET
-            throw new NotImplementedException();
+            // FIND ACCOUNT | Try to retrieve user account from username.
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "initiate MFA hard reset");
+            if (userAccount == null)
+            {
+                return (404, "Failed to find user account for the provided username.");
+            }
+
+            // ENSURE ACCOUNT NOT ALREADY LOCKED | Logs and clears refresh token in method if locked.
+            if (!(await _utilityService.EnsureAccountIsNotLockedAsync(userAccount, "initiate MFA hard reset")))
+            {
+                return (403, "Account currently locked for security reasons, please check account email.");
+            }
+
+            // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
+            string targetEmail = (isForPrimaryEmail) ? userAccount.PrimaryEmail : userAccount.SecondaryEmail;
+            if (!_emailService.ValidateSubmittedCode(targetEmail, confirmationCode, ConfirmationCodeData.CodeContext.MfaHardReset))
+            {
+                return (401, "Invalid or expired confirmation code.");
+            }
+
+            // SUCCESS: LOCK ACCOUNT AND SET DATABASE FIELDS
+            userAccount.RefreshTokenHash = string.Empty;
+            userAccount.MfaHardResetInitiatedTime = DateTime.UtcNow;
+            userAccount.MfaHardResetLockedUntilTime = (isForPrimaryEmail) ? DateTime.UtcNow.AddDays(7) : DateTime.UtcNow.AddHours(24);
+            userAccount.MfaHardResetCancelCode = GenerateMfaHardResetCancelCode();
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // SEND EMAIL WITH CANCEL LINK TO BOTH PRIMARY AND SECONDARY EMAIL | Do not await.
+            _ = _emailService.SendMfaHardResetInitiatedToEmailAsync(userAccount.PrimaryEmail, username, userAccount.MfaHardResetCancelCode, userAccount.MfaHardResetLockedUntilTime);
+            if (!string.IsNullOrEmpty(userAccount.SecondaryEmail))
+            {
+                _ = _emailService.SendMfaHardResetInitiatedToEmailAsync(userAccount.SecondaryEmail, username, userAccount.MfaHardResetCancelCode,
+                    userAccount.MfaHardResetLockedUntilTime);
+            }
+
+            _logger.LogInformation($"initiate MFA hard reset successful (username: {username}, locked until: {userAccount.MfaHardResetLockedUntilTime.ToString()})");
+            return (200, "Successfully initiated MFA hard reset, please check account email.");
+        }
+
+        public async Task<(int, object?)> CancelMfaHardResetAsync(string username, string cancelCode)
+        {
+            // NOTE: This allows anonymous access by email. Thus, do not provide any information unless code is correct.
+
+            // FIND ACCOUNT | Try to retrieve user account from username in cancellation URL query parameter.
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "cancel MFA hard reset");
+            if (userAccount == null)
+            {
+                return (401, "Cancellation code is invalid or no longer in effect.");
+            }
+
+            // COMPARE CANCEL CODES, IF EXISTS IN DATABASE | Even if after locked until time, allow cancellation if field is set.
+            //  Note that the cancel code field will no longer be set once the account's MFA setup is actually reset on login.
+            if (!CompareSubmittedMfaHardResetCancelCode(userAccount, cancelCode))
+            {
+                return (401, "Cancellation code is invalid or no longer in effect.");
+            }
+
+            // SUCCESS: UNLOCK ACCOUNT AND ENFORCE PASSWORD CHANGE
+            userAccount.MfaHardResetInitiatedTime = DateTime.MinValue;
+            userAccount.MfaHardResetLockedUntilTime = DateTime.MinValue;
+            userAccount.MfaHardResetCancelCode = string.Empty;
+            userAccount.DoesPasswordNeedReset = true;
+            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // NOTIFY BOTH EMAILS OF SUCCESSFUL CANCEL
+            _ = _emailService.SendMfaHardResetCancelledNotifToEmailAsync(userAccount.PrimaryEmail);
+            if (!string.IsNullOrEmpty(userAccount.SecondaryEmail))
+            {
+                _ = _emailService.SendMfaHardResetCancelledNotifToEmailAsync(userAccount.SecondaryEmail);
+            }
+
+            _logger.LogInformation($"cancel MFA hard reset successful (username: {userAccount.Username})");
+            return (200, "Successfully canceled the pending MFA hard reset. Please re-login and reset your password.");
         }
 
 
@@ -189,6 +314,55 @@ namespace RPG_Login_API.Services
                 _logger.LogInformation($"verify MFA setup failed: tried to verify a pending MFA code that does not exist (username: {userAccount.Username})");
                 return false;
             }
+            return true;
+        }
+
+        private string GetValidTargetEmailForMfaHardResetRequest(UserAccountModel userAccount, bool isForPrimaryEmail)
+        {
+            if (isForPrimaryEmail)
+            {
+                return userAccount.PrimaryEmail;
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(userAccount.SecondaryEmail))
+                {
+                    _logger.LogInformation($"request MFA hard reset failed: tried to send request email to secondary email which does not exist (username: {userAccount.Username})");
+                    return string.Empty;
+                }
+                return userAccount.SecondaryEmail;
+            }
+        }
+
+        private static string GenerateMfaHardResetCancelCode(int length = 32)
+        {
+            string alphanumericChars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+            if (length < 0) throw new ArgumentException("Length must be greater than or equal to 0");
+
+            char[] result = new char[length];
+            for (int i = 0; i < length; i++)
+            {
+                int index = RandomNumberGenerator.GetInt32(alphanumericChars.Length);
+                result[i] = alphanumericChars[index];
+            }
+
+            return new string(result);
+        }
+
+        private bool CompareSubmittedMfaHardResetCancelCode(UserAccountModel userAccount, string cancelCode)
+        {
+            if (string.IsNullOrEmpty(userAccount.MfaHardResetCancelCode))
+            {
+                _logger.LogInformation($"cancel MFA hard reset failed: no cancel code exists for account in database (username: {userAccount.Username}");
+                return false;
+            }
+
+            if (!string.Equals(cancelCode, userAccount.MfaHardResetCancelCode))
+            {
+                _logger.LogInformation($"cancel MFA hard reset failed: user-submitted cancel code does not match cancel code in database (username: {userAccount.Username}, submitted code: {cancelCode}");
+                return false;
+            }
+
             return true;
         }
 

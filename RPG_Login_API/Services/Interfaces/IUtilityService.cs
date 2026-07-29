@@ -5,7 +5,8 @@ namespace RPG_Login_API.Services.Interfaces
 {
     public interface IUtilityService
     {
-        public Task<UserAccountModel?> TryRetrieveAccountAsync(string username, string context);
+        public Task<UserAccountModel?> TryRetrieveAccountByUsernameAsync(string username, string context);
+        public Task<UserAccountModel?> TryRetrieveAccountByEmailAsync(string accountEmail, string context);
         public Task<bool> EnsureAccountIsNotLockedAsync(UserAccountModel userAccount, string context);
         public AccessResponseModel GenerateAccessResponse(UserAccountModel userAccount, bool isInitialLoginStep);
         public Task<bool> IsUsernameAvailableAsync(string username, string context);

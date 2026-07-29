@@ -25,7 +25,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> PlayGameFromLauncherAsync(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "play game from launcher");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "play game from launcher");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -56,7 +56,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> PingInLauncherAsync(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "ping in launcher");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "ping in launcher");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
@@ -80,7 +80,7 @@ namespace RPG_Login_API.Services
         public async Task<(int, object?)> NotifyLauncherExitAsync(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountAsync(username, "notify launcher exit");
+            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "notify launcher exit");
             if (userAccount == null)
             {
                 return (404, "Failed to find user account for the provided username.");
