@@ -51,6 +51,7 @@ Note that the server only stores a single refresh token for a given account, mea
 - **Authorization:** Does not require access token (anonymous access).
 
 This endpoint accepts a username/email and password in order to perform a basic login operation. The user can submit either a username or email, both will behave the same. For security reasons, this endpoint does not return a detailed status code or message on failure, and is designed to take the same amount of time to complete the request regardless of failure reason (to help prevent timing attacks). If successful, the returned access token contains a role based on the current account state: email not yet confirmed (10), password requires reset for security reasons (20), MFA not yet enabled (30), or login successful but awaiting MFA code submission (1). Because MFA is enforced for all accounts, a valid login will never return a full-access token (code 0), and instead will always return code 1 to denote that the user must submit an MFA code with this 'awaiting MFA' access token. The user should submit this token to the 'submit-mfa-code' endpoint below.
+NOTE: This endpoint will also handle an account which has hard-reset its MFA configuration. Upon successfully submitting credentials AND determining that the locked time has ended, the API will unlock the account by resetting any MFA hard reset fields in the database and completely removing any current MFA configuration settings. See the **Hard Reset MFA Configuration** section below for more details on this process.
 
 ### Submit MFA code for login
 - **Route:** */users/submit-mfa-code*
@@ -86,7 +87,7 @@ These endpoints are associated with new account setup (registration and new acco
 - **Accepts:** A username, email address, and password for the new account.
 - **Returns:** An access response model with an 'email not verified' token (login code 10).
 - **Status codes:** 201 on success, 400 for missing or invalid input, 409 for unavailable username, 422 for disallowed username or password (failed profanity filter or does not meet minimum security standards).
-- **Authorization:** Requires access token with 'awaiting MFA' role, received from the login endpoint.
+- **Authorization:** Does not require access token (anonymous access).
 
 This endpoint is used to register (create) a new account. The user must submit a username (3-16 characters that can only include letters, digits, underscores, and spaces), a valid email address, and a password (8-64 characters that can include any displayable character but must include at least one uppercase letter, lowercase letter, digit, and symbol); if any of these are invalid or missing, the API will return a 400 error with a descriptive error message. The endpoint will return a conflict error if the username is unavailable, but will *not* for email address availability for security reasons (otherwise a malicious actor could abuse this endpoint to determine which email addresses are in use). Upon success, a new account will be created and the API will automatically send a confirmation code to the email for the new account; the response will always include an 'email not verified' token and code 10. The user is expected to open their email and submit the short-term 8-character alphanumeric code to the 'verify account email' endpoint.
 
@@ -281,6 +282,50 @@ This endpoint is used only for when a user has successfully logged in with their
 - **Authorization:** Requires access token with 'full access' role.
 
 This endpoint is used by fully-logged-in users to regenerate the current MFA recovery code for the active MFA configuration. This allows users who may have lost their current MFA recovery code to generate a new one, granted that they have access to the current MFA configuration (required to fully log in). This endpoint returns the same data as the 'verify MFA setup' endpoint, which should be a full-access access response model with the newly-generated 24-character hexadecimal MFA recovery code; the only time the access response model will be non-full-access is if the account state somehow changes during the regeneration process. Server-side, the API simply replaces the account's existing salted and hashed MFA recovery code with the newly salted and hashed one.
+
+---
+
+# Hard Reset MFA Configuration (Recovery)
+
+### Request MFA hard reset (hard reset process, step 1/2)
+- **Route:** */users/request-mfa-hard-reset*
+- **Method:** POST
+- **Accepts:** A boolean denoting whether the request email/code should be sent to the account's primary or secondary email.
+- **Returns:** Nothing.
+- **Status codes:** 200 on success, 400 for missing boolean in request, 401 for missing or invalid access token, 403 for account currently (already) locked, 404 for no account matching username in token, 422 for tried to send reset email to nonexistent secondary email.
+- **Authorization:** Requires access token with 'awaiting MFA' role, which is received on successful login but awaiting MFA code submission.
+
+Partially-logged-in users can use this endpoint to request that their current MFA setup be hard reset. This will send an email with a confirmation code to the user's email (primary or secondary, only sending to a valid and verified secondary email if selected), which the user is expected to submit to the 'initiate MFA hard reset' endpoint. 
+
+### Resend MFA hard reset confirmation code (hard reset process)
+- **Route:** */users/resend-mfa-hard-reset-code*
+- **Method:** POST
+- **Accepts:** A boolean denoting whether the request email/code should be sent to the account's primary or secondary email.
+- **Returns:** Nothing.
+- **Status codes:** 200 on success, 400 for missing boolean in request, 401 for missing or invalid access token, 403 for account currently (already) locked, 404 for no account matching username in token, 422 for tried to send reset email to nonexistent secondary email.
+- **Authorization:** Requires access token with 'awaiting MFA' role, which is received on successful login but awaiting MFA code submission.
+
+This endpoint performs the exact same process as the 'request MFA hard reset' endpoint. It generates a random confirmation code for the user's primary or secondary email address, then sends the email. The user is expected to submit this code to the 'initiate MFA hard reset' endpoint to continue the hard reset process.
+
+### Initiate MFA hard reset (hard reset process, step 2/2)
+- **Route:** */users/initiate-mfa-hard-reset*
+- **Method:** POST
+- **Accepts:** A boolean denoting whether associated with primary or secondary email, and an 8-character confirmation code that was sent to that email.
+- **Returns:** Nothing.
+- **Status codes:** 200 on success, 400 for missing boolean OR code in request, 401 for missing or invalid access token, 403 for account currently (already) locked, 404 for no account matching username in token, 422 for missing current/active MFA configuration.
+- **Authorization:** Requires access token with 'awaiting MFA' role, which is received on successful login but awaiting MFA code submission.
+
+This endpoint is used by partially-logged-in users to actually initiate the MFA hard reset process for their account. The user must submit the confirmation code that was sent to their primary or secondary email, alongside a boolean flag denoting which it was for (this is used internally for looking up the associated email with the code). The API will prevent initiating a hard reset for an MFA configuration which does not currently exist. If the submitted code is valid and current MFA setup exists, the account's MFA hard reset flags will be set and the account will be locked; resetting via primary email locks for 7 days, resetting via secondary email is 24 hours (secondary email is optionally set and thus inherently lower-risk). Upon account lock completion, a notification email is sent to all active account emails, which contains a unique cancellation URL that the user can click before the account's MFA configuration is actually reset in order to stop the reset process; this gives the real account owner the opportunity to block any reset from an attacker.
+
+### Cancel MFA hard reset (anonymous access for account security)
+- **Route:** */users/cancel-mfa-hard-reset*
+- **Method:** POST
+- **Accepts:** Two query parameters for the account username, and for the 32-character cancel code sent to the email(s) on hard reset initiation.
+- **Returns:** Nothing.
+- **Status codes:** 200 on success, 401 for invalid or expired cancel code in request.
+- **Authorization:** Does not require access token (anonymous access).
+
+This endpoint is used by users who have received notification that their account has initiated the MFA hard reset process. It allows anonymous access with an account username and 32-character cancel token string in the query parameter, which will have been provided to the user upon notification of the MFA hard reset process beign initiated. This endpoint is critical to enabling legitimate owners of accounts to block a potential breach if their username and password are compromised and a threat actor accesses their account and initiates a reset. If the user submits the correct code for the provided username, the MFA hard reset process is completely cancelled, clearing all associated fields in the database; this effectively restores the current MFA configuration to its state before the hard reset initiation. Additionally, the account is flagged for a password reset if the process is cancelled for any reason, as cancellation should only occur if the user is preventing an account breach.
 
 ---
 

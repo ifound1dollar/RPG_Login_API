@@ -183,7 +183,7 @@ namespace RPG_Login_API.Services
             string targetEmail = GetValidTargetEmailForMfaHardResetRequest(userAccount, isForPrimaryEmail);
             if (string.IsNullOrEmpty(targetEmail))          // If empty, then there was no secondary email.
             {
-                return (404, "Tried to send MFA hard reset request to nonexistent secondary email.");
+                return (422, "Cannot send MFA hard reset request to nonexistent secondary email.");
             }
 
             // ACTUALLY SEND REQUEST EMAIL | Send request MFA reset email to the target email.
@@ -214,7 +214,7 @@ namespace RPG_Login_API.Services
             string targetEmail = GetValidTargetEmailForMfaHardResetRequest(userAccount, isForPrimaryEmail);
             if (string.IsNullOrEmpty(targetEmail))          // If empty, then there was no secondary email.
             {
-                return (404, "Tried to send MFA hard reset request to nonexistent secondary email.");
+                return (422, "Cannot send MFA hard reset request to nonexistent secondary email.");
             }
 
             // ACTUALLY SEND REQUEST EMAIL | Send request MFA reset email to the target email.
@@ -246,6 +246,12 @@ namespace RPG_Login_API.Services
             if (!_emailService.ValidateSubmittedCode(targetEmail, confirmationCode, ConfirmationCodeData.CodeContext.MfaHardReset))
             {
                 return (401, "Invalid or expired confirmation code.");
+            }
+
+            // ENSURE THERE IS AN EXISTING MFA SETUP | Do not allow hard reset of a nonexistent MFA setup.
+            if (!EnsureActiveMfaSetupExists(userAccount))
+            {
+                return (422, "Cannot reset MFA configuration which does not exist.");
             }
 
             // SUCCESS: LOCK ACCOUNT AND SET DATABASE FIELDS
@@ -312,6 +318,16 @@ namespace RPG_Login_API.Services
             if (string.IsNullOrEmpty(userAccount.PendingMfaKey))
             {
                 _logger.LogInformation($"verify MFA setup failed: tried to verify a pending MFA code that does not exist (username: {userAccount.Username})");
+                return false;
+            }
+            return true;
+        }
+
+        private bool EnsureActiveMfaSetupExists(UserAccountModel userAccount)
+        {
+            if (string.IsNullOrEmpty(userAccount.ActiveMfaKey))
+            {
+                _logger.LogInformation($"initiate MFA hard reset failed: no current active MFA setup exists for this account (username: {userAccount.Username})");
                 return false;
             }
             return true;

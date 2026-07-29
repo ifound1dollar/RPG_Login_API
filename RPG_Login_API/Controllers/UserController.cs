@@ -426,7 +426,7 @@ namespace RPG_Login_API.Controllers
         }
 
         [Authorize(Roles = TokenService.Roles.AwaitingMfa)]     // Reset can only bed oen by partial-login (awaiting MFA)
-        [Route("reset-mfa-hard-reset-code")]
+        [Route("resend-mfa-hard-reset-code")]
         [HttpPost]
         public async Task<ActionResult> UserResendMfaHardResetCodeAsync(RequestMfaHardResetRequestModel request)
         {
