@@ -411,7 +411,7 @@ namespace RPG_Login_API.Services
                     $"</tr>\r\n    " +
                     $"<tr>\r\n      " +
                     $"<td align=\"center\" style=\"padding-bottom: 30px;\">\r\n        " +
-                    $"<h1 style=\"color: #333333; margin: 0;\">Confirmation Code</h1>\r\n      " +
+                    $"<h1 style=\"color: #333333; margin: 0;\">Hard Reset Confirmation Code</h1>\r\n      " +
                     $"</td>\r\n    " +
                     $"</tr>\r\n    " +
                     $"<tr>\r\n      " +
@@ -446,7 +446,7 @@ namespace RPG_Login_API.Services
                     $"</tr>\r\n    " +
                     $"<tr>\r\n      " +
                     $"<td align=\"center\" style=\"padding-bottom: 30px;\">\r\n        " +
-                    $"<h1 style=\"color: #333333; margin: 0;\">Confirmation Code</h1>\r\n      " +
+                    $"<h1 style=\"color: #333333; margin: 0;\">Hard Reset Initiated</h1>\r\n      " +
                     $"</td>\r\n    " +
                     $"</tr>\r\n    " +
                     $"<tr>\r\n      " +

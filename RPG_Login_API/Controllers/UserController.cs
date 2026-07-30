@@ -443,7 +443,7 @@ namespace RPG_Login_API.Controllers
 
         [AllowAnonymous]
         [Route("cancel-mfa-hard-reset")]
-        [HttpPost]
+        [HttpGet]
         public async Task<ActionResult> UserCancelMfaHardResetAsync([FromQuery] CancelMfaHardResetRequestModel request)
         {
             // This endpoint must allow anonymous use from email. There is no token to read, so simply try to cancel.
