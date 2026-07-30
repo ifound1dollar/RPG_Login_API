@@ -127,9 +127,6 @@ namespace RPG_Login_API.Services
                 return (409, "New password cannot be the same as old password.");
             }
 
-            // SUCCESS: GENERATE LOGIN RESPONSE | On successful password reset, generate login response (not full login yet).
-            var response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: true);
-
             // GENERATE NEW PASSWORD HASH AND UPDATE DOCUMENT | Update various fields in account document now that password is reset.
             userAccount.PasswordHash = HashUtility.GenerateNewPasswordHash(newPassword);
             userAccount.DoesPasswordNeedReset = false;                  // Always reset to false regardless of whether reset was forced.
@@ -139,7 +136,7 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             _logger.LogInformation($"submit reset password successful (username: {username})");
-            return (200, response);
+            return (200, "Reset password successful, please log in again.");
         }
 
 
