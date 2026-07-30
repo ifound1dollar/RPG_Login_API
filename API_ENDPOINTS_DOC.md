@@ -140,11 +140,12 @@ This endpoint actually initiates the forgot password process, accepting a confir
 - **Route:** */users/submit-reset-password*
 - **Method:** POST
 - **Accepts:** The desired new password for the account.
-- **Returns:** Nothing.
+- **Returns:** An access response model with a custom login code describing the access level based on account state.
 - **Status codes:** 200 on success, 400 for missing or invalid password in request, 401 for missing or invalid password reset token, 403 for account currently locked, 404 for no account found matching username in token, 409 for new password is the same as old password, 422 for password found in list of compromised/insecure passwords.
 - **Authorization:** Requires specific 'password reset token' that was received from the password reset initiation endpoint.
 
-This endpoint executes the password reset process on the server as the final step, updating the stored password hash in the database with the salted and hashed version of the user's submitted new password. The submitted password must be 8-64 characters and can include any readable character, but must include at least one uppercase letter, lowercase letter, digit, and symbol; additionally, it cannot be found in the list of 100,000 most-commonly-used (and thus highly insecure) passwords. If submission is successful, the user is *forcefully logged out on the server for security reasons*, just in case their is a remaining refresh token stored on the server.
+This endpoint executes the password reset process on the server as the final step, updating the stored password hash in the database with the salted and hashed version of the user's submitted new password. The submitted password must be 8-64 characters and can include any readable character, but must include at least one uppercase letter, lowercase letter, digit, and symbol; additionally, it cannot be found in the list of 100,000 most-commonly-used (and thus highly insecure) passwords. If submission is successful, the stored refresh token in the database is reset to effectively log out anyone who is currently logged in to this account (if anyone), then the user is given an initial-step access response so they can continue the login process.
+NOTE: Granting an access response model here is fine because the user has proven they have access to their account email; thus, the password reset process (regardless of whether forgot password or enforced) is equally or more secure than the regular credential login process.
 
 ---
 
