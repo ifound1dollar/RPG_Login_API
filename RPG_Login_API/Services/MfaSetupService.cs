@@ -164,7 +164,7 @@ namespace RPG_Login_API.Services
             return (200, response);
         }
 
-        public async Task<(int, object?)> RequestMfaHardResetAsync(string username, bool isForPrimaryEmail)
+        public async Task<(int, object?)> RequestMfaHardResetAsync(string username)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
             var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "request MFA hard reset");
@@ -179,54 +179,23 @@ namespace RPG_Login_API.Services
                 return (403, "Account currently locked for security reasons, please check account email.");
             }
 
-            // GET VALID EMAIL TARGET | Get primary or secondary email target, returning if secondary does not exist.
-            string targetEmail = GetValidTargetEmailForMfaHardResetRequest(userAccount, isForPrimaryEmail);
-            if (string.IsNullOrEmpty(targetEmail))          // If empty, then there was no secondary email.
-            {
-                return (422, "Cannot send MFA hard reset request to nonexistent secondary email.");
-            }
-
-            // ACTUALLY SEND REQUEST EMAIL | Send request MFA reset email to the target email.
-            (int code, string message) = await _emailService.SendMfaHardResetRequestToEmailAsync(targetEmail, isForPrimaryEmail,
+            // SEND REQUEST EMAIL TO PRIMARY EMAIL | Always send to primary email.
+            (int code, string message) = await _emailService.SendMfaHardResetRequestToEmailAsync(userAccount.PrimaryEmail, isPrimaryEmail: true,
                 ConfirmationCodeData.CodeContext.MfaHardReset);
+
+            // ALSO TRY TO SEND TO SECONDARY EMAIL | Try to send to secondary, but do not return any information on it.
+            if (!string.IsNullOrEmpty(userAccount.SecondaryEmail))
+            {
+                _ = _emailService.SendMfaHardResetRequestToEmailAsync(userAccount.SecondaryEmail, isPrimaryEmail: false,
+                    ConfirmationCodeData.CodeContext.MfaHardReset);
+            }
 
             // We actually utilize the 'send code' response because this endpoint is only accessible to validated users (partial login).
             _logger.LogInformation($"request MFA hard reset successful (username: {username}");
             return (code, message);
         }
 
-        public async Task<(int, object?)> ResendMfaHardResetCodeAsync(string username, bool isForPrimaryEmail)
-        {
-            // FIND ACCOUNT | Try to retrieve user account from username.
-            var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "resend MFA hard reset code");
-            if (userAccount == null)
-            {
-                return (404, "Failed to find user account for the provided username.");
-            }
-
-            // ENSURE ACCOUNT NOT LOCKED | Logs and clears refresh token in method if locked.
-            if (!(await _utilityService.EnsureAccountIsNotLockedAsync(userAccount, "resend MFA hard reset code")))
-            {
-                return (403, "Account currently locked for security reasons, please check account email.");
-            }
-
-            // GET VALID EMAIL TARGET | Get primary or secondary email target, returning if secondary does not exist.
-            string targetEmail = GetValidTargetEmailForMfaHardResetRequest(userAccount, isForPrimaryEmail);
-            if (string.IsNullOrEmpty(targetEmail))          // If empty, then there was no secondary email.
-            {
-                return (422, "Cannot send MFA hard reset request to nonexistent secondary email.");
-            }
-
-            // ACTUALLY SEND REQUEST EMAIL | Send request MFA reset email to the target email.
-            (int code, string message) = await _emailService.SendMfaHardResetRequestToEmailAsync(targetEmail, isForPrimaryEmail,
-                ConfirmationCodeData.CodeContext.MfaHardReset);
-
-            // We actually utilize the 'send code' response because this endpoint is only accessible to validated users (partial login).
-            _logger.LogInformation($"resend MFA hard reset code successful (username: {username})");
-            return (code, message);
-        }
-
-        public async Task<(int, object?)> InitiateMfaHardResetAsync(string username, bool isForPrimaryEmail, string confirmationCode)
+        public async Task<(int, object?)> InitiateMfaHardResetAsync(string username, string confirmationCode)
         {
             // FIND ACCOUNT | Try to retrieve user account from username.
             var userAccount = await _utilityService.TryRetrieveAccountByUsernameAsync(username, "initiate MFA hard reset");
@@ -241,11 +210,16 @@ namespace RPG_Login_API.Services
                 return (403, "Account currently locked for security reasons, please check account email.");
             }
 
-            // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            string targetEmail = (isForPrimaryEmail) ? userAccount.PrimaryEmail : userAccount.SecondaryEmail;
-            if (!_emailService.ValidateSubmittedCode(targetEmail, confirmationCode, ConfirmationCodeData.CodeContext.MfaHardReset))
+            // COMPARE CODE AGAINST EITHER PRIMARY OR SECONDARY | Both will exist if valid, but each with a different code.
+            bool isPrimary = true;
+            if (!_emailService.ValidateSubmittedCode(userAccount.PrimaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.MfaHardReset))
             {
-                return (401, "Invalid or expired confirmation code.");
+                // Try secondary. Checks if secondary email is empty within method.
+                if (!_emailService.ValidateSubmittedCode(userAccount.SecondaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.MfaHardReset))
+                {
+                    return (401, "Invalid or expired confirmation code.");
+                }
+                isPrimary = false;
             }
 
             // ENSURE THERE IS AN EXISTING MFA SETUP | Do not allow hard reset of a nonexistent MFA setup.
@@ -257,7 +231,7 @@ namespace RPG_Login_API.Services
             // SUCCESS: LOCK ACCOUNT AND SET DATABASE FIELDS
             userAccount.RefreshTokenHash = string.Empty;
             userAccount.MfaHardResetInitiatedTime = DateTime.UtcNow;
-            userAccount.MfaHardResetLockedUntilTime = (isForPrimaryEmail) ? DateTime.UtcNow.AddDays(7) : DateTime.UtcNow.AddHours(24);
+            userAccount.MfaHardResetLockedUntilTime = (isPrimary) ? DateTime.UtcNow.AddDays(7) : DateTime.UtcNow.AddHours(24);
             userAccount.MfaHardResetCancelCode = GenerateMfaHardResetCancelCode();
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 

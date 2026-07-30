@@ -412,7 +412,7 @@ namespace RPG_Login_API.Controllers
         [Authorize(Roles = TokenService.Roles.AwaitingMfa)]     // Reset can only be done by partial-login (awaiting MFA)
         [Route("request-mfa-hard-reset")]
         [HttpPost]
-        public async Task<ActionResult> UserRequestMfaHardResetAsync(RequestMfaHardResetRequestModel request)
+        public async Task<ActionResult> UserRequestMfaHardResetAsync()
         {
             // Retrieve account data (username, role, guid) from access token in request header.
             if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
@@ -421,23 +421,7 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _mfaSetupService.RequestMfaHardResetAsync(username, request.IsForPrimaryEmail);
-            return StatusCode(code, response);
-        }
-
-        [Authorize(Roles = TokenService.Roles.AwaitingMfa)]     // Reset can only bed oen by partial-login (awaiting MFA)
-        [Route("resend-mfa-hard-reset-code")]
-        [HttpPost]
-        public async Task<ActionResult> UserResendMfaHardResetCodeAsync(RequestMfaHardResetRequestModel request)
-        {
-            // Retrieve account data (username, role, guid) from access token in request header.
-            if (!TryReadAccessTokenData(User, out var username, out var role, out var guid))
-            {
-                _logger.LogInformation("resend MFA hard reset code failed, incorrectly formatted access token in request header");
-                return BadRequest("Malformed access token in API request.");
-            }
-
-            (int code, object? response) = await _mfaSetupService.ResendMfaHardResetCodeAsync(username, request.IsForPrimaryEmail);
+            (int code, object? response) = await _mfaSetupService.RequestMfaHardResetAsync(username);
             return StatusCode(code, response);
         }
 
@@ -453,7 +437,7 @@ namespace RPG_Login_API.Controllers
                 return BadRequest("Malformed access token in API request.");
             }
 
-            (int code, object? response) = await _mfaSetupService.InitiateMfaHardResetAsync(username, request.IsForPrimaryEmail, request.Code);
+            (int code, object? response) = await _mfaSetupService.InitiateMfaHardResetAsync(username, request.Code);
             return StatusCode(code, response);
         }
 

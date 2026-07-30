@@ -290,32 +290,22 @@ This endpoint is used by fully-logged-in users to regenerate the current MFA rec
 ### Request MFA hard reset (hard reset process, step 1/2)
 - **Route:** */users/request-mfa-hard-reset*
 - **Method:** POST
-- **Accepts:** A boolean denoting whether the request email/code should be sent to the account's primary or secondary email.
+- **Accepts:** Nothing.
 - **Returns:** Nothing.
-- **Status codes:** 200 on success, 400 for missing boolean in request, 401 for missing or invalid access token, 403 for account currently (already) locked, 404 for no account matching username in token, 422 for tried to send reset email to nonexistent secondary email.
+- **Status codes:** 200 on success, 400 for missing boolean in request, 401 for missing or invalid access token, 403 for account currently (already) locked, 404 for no account matching username in token.
 - **Authorization:** Requires access token with 'awaiting MFA' role, which is received on successful login but awaiting MFA code submission.
 
-Partially-logged-in users can use this endpoint to request that their current MFA setup be hard reset. This will send an email with a confirmation code to the user's email (primary or secondary, only sending to a valid and verified secondary email if selected), which the user is expected to submit to the 'initiate MFA hard reset' endpoint. 
-
-### Resend MFA hard reset confirmation code (hard reset process)
-- **Route:** */users/resend-mfa-hard-reset-code*
-- **Method:** POST
-- **Accepts:** A boolean denoting whether the request email/code should be sent to the account's primary or secondary email.
-- **Returns:** Nothing.
-- **Status codes:** 200 on success, 400 for missing boolean in request, 401 for missing or invalid access token, 403 for account currently (already) locked, 404 for no account matching username in token, 422 for tried to send reset email to nonexistent secondary email.
-- **Authorization:** Requires access token with 'awaiting MFA' role, which is received on successful login but awaiting MFA code submission.
-
-This endpoint performs the exact same process as the 'request MFA hard reset' endpoint. It generates a random confirmation code for the user's primary or secondary email address, then sends the email. The user is expected to submit this code to the 'initiate MFA hard reset' endpoint to continue the hard reset process.
+Partially-logged-in users can use this endpoint to request that their current MFA setup be hard reset. This will send an email with a confirmation code to BOTH of the user's emails (secondary only if exists and is verified), which contain a confirmation code that the user is expected to submit to the 'initiate MFA hard reset' endpoint. This endpoint is used for both initial request and resending the code. NOTE: This endpoint sends a different confirmation code to each email, which allows differentiating between the codes for lockout duration purposes (primary email locks out for 7 days, secondary only 24 hours).
 
 ### Initiate MFA hard reset (hard reset process, step 2/2)
 - **Route:** */users/initiate-mfa-hard-reset*
 - **Method:** POST
-- **Accepts:** A boolean denoting whether associated with primary or secondary email, and an 8-character confirmation code that was sent to that email.
+- **Accepts:** A short-duration 8-character confirmation code that was sent to the user's email (primary or secondary).
 - **Returns:** Nothing.
 - **Status codes:** 200 on success, 400 for missing boolean OR code in request, 401 for missing or invalid access token, 403 for account currently (already) locked, 404 for no account matching username in token, 422 for missing current/active MFA configuration.
 - **Authorization:** Requires access token with 'awaiting MFA' role, which is received on successful login but awaiting MFA code submission.
 
-This endpoint is used by partially-logged-in users to actually initiate the MFA hard reset process for their account. The user must submit the confirmation code that was sent to their primary or secondary email, alongside a boolean flag denoting which it was for (this is used internally for looking up the associated email with the code). The API will prevent initiating a hard reset for an MFA configuration which does not currently exist. If the submitted code is valid and current MFA setup exists, the account's MFA hard reset flags will be set and the account will be locked; resetting via primary email locks for 7 days, resetting via secondary email is 24 hours (secondary email is optionally set and thus inherently lower-risk). Upon account lock completion, a notification email is sent to all active account emails, which contains a unique cancellation URL that the user can click before the account's MFA configuration is actually reset in order to stop the reset process; this gives the real account owner the opportunity to block any reset from an attacker.
+This endpoint is used by partially-logged-in users to actually initiate the MFA hard reset process for their account. The user must submit the confirmation code that was sent to their primary or secondary email, with the endpoint accepting either. The API will prevent initiating a hard reset for an MFA configuration which does not currently exist. If the submitted code is valid and current MFA setup exists, the account's MFA hard reset flags will be set and the account will be locked; resetting via primary email locks for 7 days, resetting via secondary email is 24 hours (secondary email is optionally set and thus inherently lower-risk). Upon account lock completion, a notification email is sent to all active account emails, which contains a unique cancellation URL that the user can click before the account's MFA configuration is actually reset in order to stop the reset process; this gives the real account owner the opportunity to block any reset from an attacker.
 
 ### Cancel MFA hard reset (anonymous access for account security)
 - **Route:** */users/cancel-mfa-hard-reset*

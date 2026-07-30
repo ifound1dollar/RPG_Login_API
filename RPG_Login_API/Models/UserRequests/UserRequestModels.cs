@@ -149,15 +149,8 @@ namespace RPG_Login_API.Models.UserRequests
 
     // MFA HARD RESET
 
-    public class RequestMfaHardResetRequestModel
-    {
-        public bool IsForPrimaryEmail { get; set; } = true;
-    }
-
     public class InitiateMfaHardResetRequestModel
     {
-        public bool IsForPrimaryEmail { get; set; } = true;
-
         [StringLength(8, ErrorMessage = "Confirmation code must be length 8.")]
         public string Code { get; set; } = string.Empty;
     }

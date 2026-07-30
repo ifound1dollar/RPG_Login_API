@@ -198,7 +198,7 @@ namespace RPG_Login_API.Services
                 }
 
                 _logger.LogInformation($"Email confirmation code successfully sent (email: {email}, context: {context.ToString()})");
-                return (200, "Email confirmation code sent successfully.");
+                return (200, "Request MFA hard reset confirmation code sent successfully.");
             }
             catch (Exception ex)
             {
