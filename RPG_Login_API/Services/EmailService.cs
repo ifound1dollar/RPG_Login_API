@@ -1,6 +1,7 @@
 ﻿using MailKit.Net.Smtp;
 using Microsoft.Extensions.Options;
 using MimeKit;
+using Org.BouncyCastle.Asn1.X509;
 using RPG_Login_API.Configuration;
 using RPG_Login_API.Data;
 using RPG_Login_API.Services.Interfaces;
@@ -117,7 +118,7 @@ namespace RPG_Login_API.Services
                 MimeMessage message = new();
                 message.From.Add(new MailboxAddress("RPG Login API noreply", "rpg.login.api.noreply@gmail.com"));
                 message.To.Add(new MailboxAddress(email, email));
-                message.Subject = "One-time confirmation code";
+                message.Subject = "One-time Confirmation Code";
                 message.Body = bodyBuilder.ToMessageBody();
 
                 using (var smtp = new SmtpClient())
@@ -140,6 +141,8 @@ namespace RPG_Login_API.Services
                 return (500, "An unexpected error occurred during the request, please try again.");
             }
         }
+
+        #region (Interface) Public: MFA Hard Reset
 
         public async Task<(int, string)> SendMfaHardResetRequestToEmailAsync(string email, bool isPrimaryEmail, ConfirmationCodeData.CodeContext context)
         {
@@ -183,7 +186,7 @@ namespace RPG_Login_API.Services
                 MimeMessage message = new();
                 message.From.Add(new MailboxAddress("RPG Login API noreply", "rpg.login.api.noreply@gmail.com"));
                 message.To.Add(new MailboxAddress(email, email));
-                message.Subject = "One-time confirmation code";
+                message.Subject = "One-time Confirmation Code";
                 message.Body = bodyBuilder.ToMessageBody();
 
                 using (var smtp = new SmtpClient())
@@ -234,7 +237,7 @@ namespace RPG_Login_API.Services
                 MimeMessage message = new();
                 message.From.Add(new MailboxAddress("RPG Login API noreply", "rpg.login.api.noreply@gmail.com"));
                 message.To.Add(new MailboxAddress(email, email));
-                message.Subject = "MFA hard reset initiated";
+                message.Subject = "MFA Hard Reset Initiated";
                 message.Body = bodyBuilder.ToMessageBody();
 
                 using (var smtp = new SmtpClient())
@@ -277,7 +280,7 @@ namespace RPG_Login_API.Services
                 MimeMessage message = new();
                 message.From.Add(new MailboxAddress("RPG Login API noreply", "rpg.login.api.noreply@gmail.com"));
                 message.To.Add(new MailboxAddress(email, email));
-                message.Subject = "MFA hard reset cancelled";
+                message.Subject = "MFA Hard Reset Cancelled";
                 message.Body = bodyBuilder.ToMessageBody();
 
                 using (var smtp = new SmtpClient())
@@ -320,7 +323,7 @@ namespace RPG_Login_API.Services
                 MimeMessage message = new();
                 message.From.Add(new MailboxAddress("RPG Login API noreply", "rpg.login.api.noreply@gmail.com"));
                 message.To.Add(new MailboxAddress(email, email));
-                message.Subject = "MFA hard reset completed";
+                message.Subject = "MFA Hard Reset Completed";
                 message.Body = bodyBuilder.ToMessageBody();
 
                 using (var smtp = new SmtpClient())
@@ -343,6 +346,61 @@ namespace RPG_Login_API.Services
                 return (500, "An unexpected error occurred during the request, please try again.");
             }
         }
+
+        #endregion
+
+        #region (Interface) Public: Notify On Account Changed
+
+        public async Task<(int, string)> NotifyUserOnAccountSettingsChanged(string email, IEmailService.NotificationContext context)
+        {
+            // ENSURE EMAIL IS NOT EMPTY
+            if (string.IsNullOrEmpty(email))
+            {
+                _logger.LogInformation($"Failed to send account settings changed notification to email: provided email was empty string (email: {email}, context: {context.ToString()})");
+                return (400, "Cannot send notification to empty email.");
+            }
+
+            // Do not send notification email if in development mode.
+            if (Program.IsDevelopment)
+            {
+                return (200, "Account settings changed notification sent successfully.");
+            }
+
+            // If not in development mode, use Gmail SMTP to send an email to the user.
+            try
+            {
+                var bodyBuilder = new BodyBuilder
+                {
+                    HtmlBody = Helper.GenerateHtmlOnAccountSettingsChanged(context)
+                };
+                MimeMessage message = new();
+                message.From.Add(new MailboxAddress("RPG Login API noreply", "rpg.login.api.noreply@gmail.com"));
+                message.To.Add(new MailboxAddress(email, email));
+                message.Subject = "Security Alert";
+                message.Body = bodyBuilder.ToMessageBody();
+
+                using (var smtp = new SmtpClient())
+                {
+                    // Connect to provider, then sign into SMTP server using secure credentials.
+                    await smtp.ConnectAsync("smtp.gmail.com", 587, MailKit.Security.SecureSocketOptions.StartTls);
+                    await smtp.AuthenticateAsync(_settings.Value.EmailAddress, _settings.Value.AppPassword);
+
+                    // Actually send the message, then disconnect gracefully.
+                    await smtp.SendAsync(message);
+                    await smtp.DisconnectAsync(true);
+                }
+
+                _logger.LogInformation($"account settings changed notification successfully sent (email: {email}, context: {context.ToString()})");
+                return (200, "Account settings changed notification sent successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return (500, "An unexpected error occurred during the request, please try again.");
+            }
+        }
+
+        #endregion
 
 
 
@@ -452,7 +510,7 @@ namespace RPG_Login_API.Services
                     $"<tr>\r\n      " +
                     $"<td align=\"center\" style=\"padding-bottom: 30px;\">\r\n        " +
                     $"<p style=\"color: #666666; font-size: 16px; line-height: 24px; margin: 0;\">\r\n          " +
-                    $"A multi-factor authentication reset was initiated for your account. For security reasons, your account is locked until {lockedUntilDateTime} to ensure account security. After this time, your account will be un-locked and the multi-factor authentication setup will need to be re-configured. If you did not initiate this reset or want to cancel the reset, please click the link below before {lockedUntilDateTime}.\r\n        " +
+                    $"A multi-factor authentication reset was initiated for your account. For security reasons, your account is locked until {lockedUntilDateTime} to ensure account security. After this time, your account will be unlocked and the multi-factor authentication setup will need to be re-configured. If you did not initiate this reset or want to cancel the reset, please click the link below before {lockedUntilDateTime}.\r\n        " +
                     $"</p>\r\n      </td>\r\n    </tr>\r\n    <tr>\r\n      <td align=\"center\" style=\"padding-bottom: 40px;\">\r\n        " +
                     $"<!-- Code Display Box -->\r\n        " +
                     $"<div style=\"background-color: #f0f4f8; color: #1a365d; font-size: 24px; font-weight: bold; letter-spacing: 2px; padding: 20px 30px; border-radius: 6px; display: inline-block;\">\r\n          " +
@@ -512,6 +570,42 @@ namespace RPG_Login_API.Services
                     $"Your account's multi-factor authentication setup was just hard reset. Any cancellation link sent to your email is now invalid. If you did not initiate this reset, please contact customer support.\r\n        " +
                     $"</p>\r\n      </td>\r\n    </tr>\r\n        " +
                     $"</table>";
+            }
+
+
+            public static string GenerateHtmlOnAccountSettingsChanged(IEmailService.NotificationContext context)
+            {
+                string embed = context switch
+                {
+                    IEmailService.NotificationContext.UsernameChanged => "username",
+                    IEmailService.NotificationContext.PrimaryEmailChanged => "primary email",
+                    IEmailService.NotificationContext.SecondaryEmailChanged => "secondary email",
+                    IEmailService.NotificationContext.PasswordChanged => "password",
+                    _ => "[MISSING]"    // Default
+                };
+
+                return $"<body style=\"margin: 0; padding: 0; background-color: #f4f4f4; font-family: Arial, sans-serif;\">\r\n" +
+                    $"<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"table-layout: fixed; background-color: #f4f4f4; padding: 20px;\">\r\n    " +
+                    $"<tr>\r\n      " +
+                    $"<td align=\"center\">\r\n        " +
+                    $"<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"600\" style=\"background-color: #ffffff; border-radius: 6px; padding: 40px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);\">\r\n          " +
+                    $"<tr>\r\n            " +
+                    $"<td>\r\n              " +
+                    $"<h2 style=\"color: #333333; margin-top: 0;\">Security Alert</h2>\r\n              " +
+                    $"<p style=\"color: #555555; font-size: 16px; line-height: 1.5;\">Hello,</p>\r\n              " +
+                    $"<p style=\"color: #555555; font-size: 16px; line-height: 1.5;\">This email serves to notify you that your account's {embed} was successfully changed. If you made this change, you can safely ignore this email.</p>\r\n              " +
+                    $"<div style=\"background-color: #fff8e1; border-left: 4px solid #ffc107; padding: 12px; margin: 20px 0;\">\r\n                " +
+                    $"<p style=\"color: #795548; font-size: 14px; margin: 0;\">If you did not make this change, please immediately change your password.</p>\r\n              " +
+                    $"</div>\r\n              " +
+                    //$"<p style=\"color: #555555; font-size: 16px; line-height: 1.5;\">\r\n                " +
+                    //$"<a href=\"https://example.com\" style=\"color: #ffffff; background-color: #007bff; text-decoration: none; padding: 10px 20px; border-radius: 4px; display: inline-block;\">Contact Support</a>\r\n              " +
+                    //$"</p>\r\n            " +
+                    $"</td>\r\n          " +
+                    $"</tr>\r\n        " +
+                    $"</table>\r\n      " +
+                    $"</td>\r\n    " +
+                    $"</tr>\r\n  " +
+                    $"</table></body>\r\n";
             }
         }
     }

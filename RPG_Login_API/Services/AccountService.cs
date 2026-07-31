@@ -8,15 +8,15 @@ namespace RPG_Login_API.Services
     public class AccountService : IAccountService
     {
         private readonly IDatabaseService _databaseService;
-        private readonly IEmailService _emailCodeService;
+        private readonly IEmailService _emailService;
         private readonly IUtilityService _utilityService;
         private readonly ILogger _logger;
 
-        public AccountService(IDatabaseService databaseService, IEmailService emailCodeService, IUtilityService utilityService,
+        public AccountService(IDatabaseService databaseService, IEmailService emailService, IUtilityService utilityService,
             ILogger<AccountService> logger)
         {
             _databaseService = databaseService;
-            _emailCodeService = emailCodeService;
+            _emailService = emailService;
             _utilityService = utilityService;
 
             _logger = logger;
@@ -71,7 +71,7 @@ namespace RPG_Login_API.Services
                 return (409, "New username cannot be the same as old username.");
             }
 
-            // RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens with new username.
+            // SUCCESS: RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens with new username.
             var response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);
             response.Username = newUsername;        // Manually update username in response.
 
@@ -80,6 +80,9 @@ namespace RPG_Login_API.Services
             userAccount.LastUsernameChangedTime = DateTime.UtcNow;
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount);     // Query by old username.
+
+            // NOTIFY ACCOUNT EMAIL OF USERNAME CHANGE | Do not await.
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.UsernameChanged);
 
             _logger.LogInformation($"change username successful (old username: {existingUsername} | new username: {newUsername})");
             return (200, response);
@@ -120,7 +123,7 @@ namespace RPG_Login_API.Services
                 return (409, "New password cannot be the same as old password.");
             }
 
-            // RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens with new username.
+            // SUCCESS: RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens with new username.
             var response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);
 
             // GENERATE NEW PASSWORD HASH AND UPDATE DOCUMENT | Update various fields in account document now that password is reset.
@@ -130,6 +133,9 @@ namespace RPG_Login_API.Services
             userAccount.LastPasswordChangedTime = DateTime.UtcNow;
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // NOTIFY ACCOUNT EMAIL OF PASSWORD CHANGE | Do not await.
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.PasswordChanged);
 
             _logger.LogInformation($"change password successful (username: {username})");
             return (200, response);
@@ -175,7 +181,7 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // SEND CONFIRMATION CODE TO NEW EMAIL | Do not await, because sending email can take a while.
-            _ = _emailCodeService.SendCodeToEmailAsync(newEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
+            _ = _emailService.SendCodeToEmailAsync(newEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
 
             _logger.LogInformation($"submit changed email successful (username: {username} | current email: {userAccount.PrimaryEmail} | new email: {newEmail})");
             return (200, "Submit new email for change successful.");
@@ -197,7 +203,7 @@ namespace RPG_Login_API.Services
             }
 
             // RESEND EMAIL VERIFICATION CODE | Generate and send a new code, target email depending on context.
-            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.PendingNewPrimaryEmail,
+            (int code, string message) = await _emailService.SendCodeToEmailAsync(userAccount.PendingNewPrimaryEmail,
                 ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
 
             // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
@@ -220,7 +226,7 @@ namespace RPG_Login_API.Services
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PendingNewPrimaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.PrimaryEmailVerification))
+            if (!_emailService.ValidateSubmittedCode(userAccount.PendingNewPrimaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.PrimaryEmailVerification))
             {
                 return (401, "Invalid or expired confirmation code.");
             }
@@ -239,12 +245,18 @@ namespace RPG_Login_API.Services
             var response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);
             response.PrimaryEmail = userAccount.PendingNewPrimaryEmail;                         // Manually update primary email in response.
 
+            // NOTIFY OLD EMAIL OF CHANGE | This must be done before overwriting active (old) primary email.
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.PrimaryEmailChanged);
+
             // UPDATE DATABASE | After token generation, update account document.
             userAccount.PrimaryEmail = userAccount.PendingNewPrimaryEmail;
             userAccount.PendingNewPrimaryEmail = string.Empty;      // Clear pending new email upon verification; verified email is now main email.
             userAccount.LastEmailChangedTime = DateTime.UtcNow;     // Consider verification to be 'changed time'.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // NOTIFY NEW EMAIL OF PRIMARY EMAIL CHANGE | Do not await.
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.PrimaryEmailChanged);
 
             _logger.LogInformation($"verify changed email successful (username: {username}, verified email: {userAccount.PrimaryEmail})");
             return (200, response);
@@ -284,7 +296,7 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // SEND CONFIRMATION CODE TO NEW EMAIL | Do not await, because sending email can take a while.
-            _ = _emailCodeService.SendCodeToEmailAsync(secondaryEmail, ConfirmationCodeData.CodeContext.SecondaryEmailVerification);
+            _ = _emailService.SendCodeToEmailAsync(secondaryEmail, ConfirmationCodeData.CodeContext.SecondaryEmailVerification);
 
             _logger.LogInformation($"submit secondary email successful (username: {username} | current secondary email: {userAccount.SecondaryEmail}" +
                 $"| submitted secondary email: {secondaryEmail})");
@@ -307,7 +319,7 @@ namespace RPG_Login_API.Services
             }
 
             // RESEND EMAIL VERIFICATION CODE | Generate and send a new code, target email depending on context.
-            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.PendingNewSecondaryEmail,
+            (int code, string message) = await _emailService.SendCodeToEmailAsync(userAccount.PendingNewSecondaryEmail,
                 ConfirmationCodeData.CodeContext.SecondaryEmailVerification);
 
             // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
@@ -330,7 +342,7 @@ namespace RPG_Login_API.Services
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PendingNewSecondaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.SecondaryEmailVerification))
+            if (!_emailService.ValidateSubmittedCode(userAccount.PendingNewSecondaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.SecondaryEmailVerification))
             {
                 return (401, "Invalid or expired confirmation code.");
             }
@@ -354,6 +366,10 @@ namespace RPG_Login_API.Services
             userAccount.PendingNewSecondaryEmail = string.Empty;
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // NOTIFY BOTH PRIMARY AND NEW SECONDARY EMAIL OF CHANGE | Do not await.
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.SecondaryEmailChanged);
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.SecondaryEmail, IEmailService.NotificationContext.SecondaryEmailChanged);
 
             _logger.LogInformation($"verify secondary email successful (username: {username}, verified secondary email: {userAccount.SecondaryEmail})");
             return (200, response);

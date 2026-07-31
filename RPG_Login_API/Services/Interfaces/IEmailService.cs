@@ -4,6 +4,8 @@ namespace RPG_Login_API.Services.Interfaces
 {
     public interface IEmailService
     {
+        public enum NotificationContext { None, UsernameChanged, PrimaryEmailChanged, SecondaryEmailChanged, PasswordChanged }
+
         /// <summary>
         /// Asynchronously tries to send a randomly-generated confirmation code to the provided email
         ///  using Gmail SMTP. Handles logging and errors internally within this method.
@@ -59,5 +61,13 @@ namespace RPG_Login_API.Services.Interfaces
         /// </summary>
         /// <param name="email"> The email to try to send the notification to. </param>
         public Task<(int, string)> SendMfaHardResetCompletedNotifToEmailAsync(string email);
+
+        /// <summary>
+        /// Sends a notification email to the target email address, notifying the user that their account 
+        ///  settings were just changed. Accepts an enum describing which setting was changed.
+        /// </summary>
+        /// <param name="email"> The target email to try to send the notification to. </param>
+        /// <param name="context"> The notification context describing which setting was changed. </param>
+        public Task<(int, string)> NotifyUserOnAccountSettingsChanged(string email, NotificationContext context);
     }
 }

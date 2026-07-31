@@ -61,7 +61,7 @@ namespace RPG_Login_API.Models.MongoDB
         [BsonElement("mfa_hard_reset_locked_until_time")]
         public DateTime MfaHardResetLockedUntilTime { get; set; } = DateTime.MinValue;
 
-        [BsonElement("mfa_hard_reset_cancel_token")]
+        [BsonElement("mfa_hard_reset_cancel_code")]
         public string MfaHardResetCancelCode { get; set; } = string.Empty;
 
 

@@ -9,16 +9,16 @@ namespace RPG_Login_API.Services
     public class ResetPasswordService : IResetPasswordService
     {
         private readonly IDatabaseService _databaseService;
-        private readonly IEmailService _emailCodeService;
+        private readonly IEmailService _emailService;
         private readonly ITokenService _tokenService;
         private readonly IUtilityService _utilityService;
         private readonly ILogger _logger;
 
-        public ResetPasswordService(IDatabaseService databaseService, IEmailService emailCodeService, ITokenService tokenService,
+        public ResetPasswordService(IDatabaseService databaseService, IEmailService emailService, ITokenService tokenService,
             IUtilityService utilityService, ILogger<ResetPasswordService> logger)
         {
             _databaseService = databaseService;
-            _emailCodeService = emailCodeService;
+            _emailService = emailService;
             _tokenService = tokenService;
             _utilityService = utilityService;
 
@@ -53,7 +53,7 @@ namespace RPG_Login_API.Services
             }
 
             // TRY TO SEND CODE TO EMAIL | Do not await because sending code can take a while.
-            _ = _emailCodeService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PasswordReset);
+            _ = _emailService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PasswordReset);
         }
 
         public async Task<(int, object?)> InitiateResetPasswordAsync(string usernameOrEmail, string confirmationCode)
@@ -82,7 +82,7 @@ namespace RPG_Login_API.Services
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PrimaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.PasswordReset))
+            if (!_emailService.ValidateSubmittedCode(userAccount.PrimaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.PasswordReset))
             {
                 return (401, "Invalid or expired confirmation code.");
             }
@@ -127,13 +127,16 @@ namespace RPG_Login_API.Services
                 return (409, "New password cannot be the same as old password.");
             }
 
-            // GENERATE NEW PASSWORD HASH AND UPDATE DOCUMENT | Update various fields in account document now that password is reset.
+            // SUCCESS: GENERATE NEW PASSWORD HASH AND UPDATE DOCUMENT | Update various fields in account document now that password is reset.
             userAccount.PasswordHash = HashUtility.GenerateNewPasswordHash(newPassword);
             userAccount.DoesPasswordNeedReset = false;                  // Always reset to false regardless of whether reset was forced.
             userAccount.IsEmailVerified = true;                         // Reset requires email anyway, so implicitly verify email.
             userAccount.LastPasswordChangedTime = DateTime.UtcNow;
             userAccount.RefreshTokenHash = string.Empty;                // Reset just in case anyone was logged in at time of change.
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // NOTIFY ACCOUNT EMAIL OF PASSWORD CHANGE | Do not await.
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.PasswordChanged);
 
             _logger.LogInformation($"submit reset password successful (username: {username})");
             return (200, "Reset password successful, please log in again.");
