@@ -1,5 +1,5 @@
 # Endpoint Documentation
-This documentation describes what each endpoint does, what data it accepts and returns, what status codes may be returned, what roles are allowed to access it, how the client should use it, what endpoints the client is expected to request afterward, and other various information that should be known about the endpoint. They are broken up into a few sections for readability: account access, email verification, basic information management, multi-factor authentication setup and management, and account state tracking. Note that all endpoints will return a 500 status code if an API error occurs, and will return a string error message if a 400/500 response.
+This documentation describes what each endpoint does, what data it accepts and returns, what status codes may be returned, what roles are allowed to access it, how the client should use it, what endpoints the client is expected to request afterward, and other various information that should be known about the endpoint. They are broken up into multiple sections for readability: account access (login), new account (register & initial setup), forgot password, account management (plus secondary email), multi-factor authentication setup and management, and launcher actions. Note that all endpoints will return a 500 status code if an API error occurs, and will return a string error message if any 400/500 response.
 
 ### Access response model
 The **access response model** used throughout the application follows a specific structure and includes a custom 'login status code' which describes the account state and consequently the access granted by the returned access token. In summary, this custom login code prioritizes persistent account status flags, like email not yet verified, account password needs reset for security reasons, and multi-factor authentication not yet setup. Only if these flags are good, does the response model return a proper 'success' state, which denotes whether it is a full login or whether the user must enter their MFA code.
@@ -72,9 +72,6 @@ This endpoint exists purely to complete the login process for a user, and only a
 - **Authorization:** Requires access token with any role.
 
 This endpoint simply logs out the user, retrieving the account data (like username) directly from the token. Server-side, the account's stored refresh token is removed from the database, disallowing further access token refreshing or refresh login; the user must explicitly log in again in order to access their account. While this endpoint returns 200 or 404, the logout process will almost always be performed without the user awaiting a response from this endpoint.
-
-### Forgot password
-*See **Basic Account Information Management** section for details about this endpoint. This endpoint is used both for manual password reset and for account recovery.*
 
 ---
 
@@ -320,7 +317,7 @@ This endpoint is used by users who have received notification that their account
 
 ---
 
-# Launcher Operations
+# Launcher Actions
 These methods are used by the launcher for launcher-specific tasks, like playing game or notifying in launcher / exit launcher.
 
 ### Play game from launcher
