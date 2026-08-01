@@ -68,6 +68,6 @@ namespace RPG_Login_API.Services.Interfaces
         /// </summary>
         /// <param name="email"> The target email to try to send the notification to. </param>
         /// <param name="context"> The notification context describing which setting was changed. </param>
-        public Task<(int, string)> NotifyUserOnAccountSettingsChanged(string email, NotificationContext context);
+        public Task<(int, string)> NotifyUserOnAccountSettingsChanged(string email, string username, NotificationContext context);
     }
 }

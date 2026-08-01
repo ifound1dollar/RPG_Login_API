@@ -351,7 +351,7 @@ namespace RPG_Login_API.Services
 
         #region (Interface) Public: Notify On Account Changed
 
-        public async Task<(int, string)> NotifyUserOnAccountSettingsChanged(string email, IEmailService.NotificationContext context)
+        public async Task<(int, string)> NotifyUserOnAccountSettingsChanged(string email, string username, IEmailService.NotificationContext context)
         {
             // ENSURE EMAIL IS NOT EMPTY
             if (string.IsNullOrEmpty(email))
@@ -371,7 +371,7 @@ namespace RPG_Login_API.Services
             {
                 var bodyBuilder = new BodyBuilder
                 {
-                    HtmlBody = Helper.GenerateHtmlOnAccountSettingsChanged(context)
+                    HtmlBody = Helper.GenerateHtmlOnAccountSettingsChanged(username, context)
                 };
                 MimeMessage message = new();
                 message.From.Add(new MailboxAddress("RPG Login API noreply", "rpg.login.api.noreply@gmail.com"));
@@ -573,7 +573,7 @@ namespace RPG_Login_API.Services
             }
 
 
-            public static string GenerateHtmlOnAccountSettingsChanged(IEmailService.NotificationContext context)
+            public static string GenerateHtmlOnAccountSettingsChanged(string username, IEmailService.NotificationContext context)
             {
                 string embed = context switch
                 {
@@ -592,7 +592,7 @@ namespace RPG_Login_API.Services
                     $"<tr>\r\n            " +
                     $"<td>\r\n              " +
                     $"<h2 style=\"color: #333333; margin-top: 0;\">Security Alert</h2>\r\n              " +
-                    $"<p style=\"color: #555555; font-size: 16px; line-height: 1.5;\">Hello,</p>\r\n              " +
+                    $"<p style=\"color: #555555; font-size: 16px; line-height: 1.5;\">Hello {username},</p>\r\n              " +
                     $"<p style=\"color: #555555; font-size: 16px; line-height: 1.5;\">This email serves to notify you that your account's {embed} was successfully changed. If you made this change, you can safely ignore this email.</p>\r\n              " +
                     $"<div style=\"background-color: #fff8e1; border-left: 4px solid #ffc107; padding: 12px; margin: 20px 0;\">\r\n                " +
                     $"<p style=\"color: #795548; font-size: 14px; margin: 0;\">If you did not make this change, please immediately change your password.</p>\r\n              " +

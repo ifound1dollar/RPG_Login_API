@@ -82,7 +82,7 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount);     // Query by old username.
 
             // NOTIFY ACCOUNT EMAIL OF USERNAME CHANGE | Do not await.
-            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.UsernameChanged);
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username, IEmailService.NotificationContext.UsernameChanged);
 
             _logger.LogInformation($"change username successful (old username: {existingUsername} | new username: {newUsername})");
             return (200, response);
@@ -135,7 +135,7 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // NOTIFY ACCOUNT EMAIL OF PASSWORD CHANGE | Do not await.
-            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.PasswordChanged);
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username, IEmailService.NotificationContext.PasswordChanged);
 
             _logger.LogInformation($"change password successful (username: {username})");
             return (200, response);
@@ -246,7 +246,7 @@ namespace RPG_Login_API.Services
             response.PrimaryEmail = userAccount.PendingNewPrimaryEmail;                         // Manually update primary email in response.
 
             // NOTIFY OLD EMAIL OF CHANGE | This must be done before overwriting active (old) primary email.
-            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.PrimaryEmailChanged);
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username, IEmailService.NotificationContext.PrimaryEmailChanged);
 
             // UPDATE DATABASE | After token generation, update account document.
             userAccount.PrimaryEmail = userAccount.PendingNewPrimaryEmail;
@@ -256,7 +256,7 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // NOTIFY NEW EMAIL OF PRIMARY EMAIL CHANGE | Do not await.
-            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.PrimaryEmailChanged);
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username, IEmailService.NotificationContext.PrimaryEmailChanged);
 
             _logger.LogInformation($"verify changed email successful (username: {username}, verified email: {userAccount.PrimaryEmail})");
             return (200, response);
@@ -368,8 +368,8 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // NOTIFY BOTH PRIMARY AND NEW SECONDARY EMAIL OF CHANGE | Do not await.
-            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.SecondaryEmailChanged);
-            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.SecondaryEmail, IEmailService.NotificationContext.SecondaryEmailChanged);
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username, IEmailService.NotificationContext.SecondaryEmailChanged);
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.SecondaryEmail, userAccount.Username, IEmailService.NotificationContext.SecondaryEmailChanged);
 
             _logger.LogInformation($"verify secondary email successful (username: {username}, verified secondary email: {userAccount.SecondaryEmail})");
             return (200, response);

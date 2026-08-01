@@ -136,7 +136,8 @@ namespace RPG_Login_API.Services
             await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
             // NOTIFY ACCOUNT EMAIL OF PASSWORD CHANGE | Do not await.
-            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, IEmailService.NotificationContext.PasswordChanged);
+            _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username,
+                IEmailService.NotificationContext.PasswordChanged);
 
             _logger.LogInformation($"submit reset password successful (username: {username})");
             return (200, "Reset password successful, please log in again.");
