@@ -10,7 +10,6 @@ using OtpNet;
 using QRCoder;
 using RPG_Login_API.Configuration;
 using RPG_Login_API.Models.MongoDB;
-using RPG_Login_API.Models.UserResponses;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 using System.Security.Cryptography;

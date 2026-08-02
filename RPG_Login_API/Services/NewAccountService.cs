@@ -1,6 +1,6 @@
 ﻿using RPG_Login_API.Data;
 using RPG_Login_API.Models.MongoDB;
-using RPG_Login_API.Models.UserResponses;
+using RPG_Login_API.Models.Responses;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 
@@ -9,29 +9,18 @@ namespace RPG_Login_API.Services
     public class NewAccountService : INewAccountService
     {
         private readonly IDatabaseService _databaseService;
-        private readonly IEmailService _emailCodeService;
+        private readonly IEmailService _emailService;
         private readonly IUtilityService _utilityService;
         private readonly ILogger _logger;
-
-        private readonly ProfanityFilter.ProfanityFilter _profanityFilter;
-        private readonly HashSet<string> _bannedPasswords;
 
         public NewAccountService(IDatabaseService databaseService, IEmailService emailCodeService,
             IUtilityService utilityService, ILogger<NewAccountService> logger)
         {
             _databaseService = databaseService;
-            _emailCodeService = emailCodeService;
+            _emailService = emailCodeService;
             _utilityService = utilityService;
 
             _logger = logger;
-
-            // Load a list of 100000 most commonly used passwords, used to prevent unsafe passwords.
-            string filePath = Path.Combine(Directory.GetCurrentDirectory(), "Utility", "100k-most-used-passwords-NCSC.txt");
-            _bannedPasswords = new HashSet<string>(File.ReadAllLines(filePath), StringComparer.Ordinal);
-
-            // Load custom (minimal) profanity filter list, for use when users submit a new username.
-            filePath = Path.Combine(Directory.GetCurrentDirectory(), "Utility", "minimal-profanity-filter-list.txt");
-            _profanityFilter = new ProfanityFilter.ProfanityFilter(File.ReadAllLines(filePath).ToList());
         }
 
 
@@ -103,7 +92,7 @@ namespace RPG_Login_API.Services
             }
 
             // RESEND EMAIL VERIFICATION CODE | Generate and send a new code to primary email.
-            (int code, string message) = await _emailCodeService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
+            (int code, string message) = await _emailService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
 
             // We actually utilize the 'send code' response because this endpoint is only accessible to validated users.
             _logger.LogInformation($"resend email verification code successful (username: {username})");
@@ -126,7 +115,7 @@ namespace RPG_Login_API.Services
             }
 
             // VALIDATE USER-SUBMITTED CONFIRMATION CODE | Call email code service method to validate, which logs internally.
-            if (!_emailCodeService.ValidateSubmittedCode(userAccount.PrimaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.PrimaryEmailVerification))
+            if (!_emailService.ValidateSubmittedCode(userAccount.PrimaryEmail, confirmationCode, ConfirmationCodeData.CodeContext.PrimaryEmailVerification))
             {
                 return (401, "Invalid or expired confirmation code.");
             }

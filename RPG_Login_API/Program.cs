@@ -60,12 +60,12 @@ namespace RPG_Login_API
             // CONTROLLER SERVICES
             builder.Services.AddSingleton<ILoginService, LoginService>();
             builder.Services.AddSingleton<INewAccountService, NewAccountService>();
-            builder.Services.AddSingleton<IResetPasswordService, ResetPasswordService>();
+            builder.Services.AddSingleton<IRecoveryService, RecoveryService>();
             builder.Services.AddSingleton<IAccountService, AccountService>();
-            builder.Services.AddSingleton<IMfaSetupService, MfaSetupService>();
+            builder.Services.AddSingleton<IMfaService, MfaService>();
             builder.Services.AddSingleton<ILauncherService, LauncherService>();
 
-            // Add our controller(s). Adds an additional JSON option to remove the special naming policy from serialization
+            // Add our controllers. Adds an additional JSON option to remove the special naming policy from serialization
             //  behavior, which will retain PascalCase (as used by C#) rather than re-formatting to camelCase (the default).
             builder.Services.AddControllers().AddJsonOptions(
                 options => options.JsonSerializerOptions.PropertyNamingPolicy = null);

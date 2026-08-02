@@ -1,13 +1,13 @@
 ﻿using RPG_Login_API.Data;
 using RPG_Login_API.Models.MongoDB;
-using RPG_Login_API.Models.UserResponses;
+using RPG_Login_API.Models.Responses;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 using System.Security.Cryptography;
 
 namespace RPG_Login_API.Services
 {
-    public class MfaSetupService : IMfaSetupService
+    public class MfaService : IMfaService
     {
         private readonly IDatabaseService _databaseService;
         private readonly IMfaCodeService _mfaCodeService;
@@ -15,8 +15,8 @@ namespace RPG_Login_API.Services
         private readonly IUtilityService _utilityService;
         private readonly ILogger _logger;
 
-        public MfaSetupService(IDatabaseService databaseService, IMfaCodeService mfaCodeService, IEmailService emailService,
-            IUtilityService utilityService, ILogger<MfaSetupService> logger)
+        public MfaService(IDatabaseService databaseService, IMfaCodeService mfaCodeService, IEmailService emailService,
+            IUtilityService utilityService, ILogger<MfaService> logger)
         {
             _databaseService = databaseService;
             _mfaCodeService = mfaCodeService;

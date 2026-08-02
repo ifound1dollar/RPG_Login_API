@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace RPG_Login_API.Models.UserRequests
+namespace RPG_Login_API.Models.Requests
 {
     // LOGIN AND REGISTER
 

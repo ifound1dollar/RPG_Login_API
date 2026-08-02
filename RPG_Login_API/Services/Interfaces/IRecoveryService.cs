@@ -1,6 +1,6 @@
 ﻿namespace RPG_Login_API.Services.Interfaces
 {
-    public interface IResetPasswordService
+    public interface IRecoveryService
     {
         public Task ForgotPasswordAsync(string usernameOrEmail);
         public Task<(int, object?)> InitiateResetPasswordAsync(string usernameOrEmail, string confirmationCode);

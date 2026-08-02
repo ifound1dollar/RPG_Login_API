@@ -1,5 +1,4 @@
 ﻿using RPG_Login_API.Models.MongoDB;
-using RPG_Login_API.Models.UserResponses;
 
 namespace RPG_Login_API.Services.Interfaces
 {

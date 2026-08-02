@@ -1,12 +1,12 @@
 ﻿using RPG_Login_API.Data;
 using RPG_Login_API.Models.MongoDB;
-using RPG_Login_API.Models.UserResponses;
+using RPG_Login_API.Models.Responses;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 
 namespace RPG_Login_API.Services
 {
-    public class ResetPasswordService : IResetPasswordService
+    public class RecoveryService : IRecoveryService
     {
         private readonly IDatabaseService _databaseService;
         private readonly IEmailService _emailService;
@@ -14,8 +14,8 @@ namespace RPG_Login_API.Services
         private readonly IUtilityService _utilityService;
         private readonly ILogger _logger;
 
-        public ResetPasswordService(IDatabaseService databaseService, IEmailService emailService, ITokenService tokenService,
-            IUtilityService utilityService, ILogger<ResetPasswordService> logger)
+        public RecoveryService(IDatabaseService databaseService, IEmailService emailService, ITokenService tokenService,
+            IUtilityService utilityService, ILogger<RecoveryService> logger)
         {
             _databaseService = databaseService;
             _emailService = emailService;
@@ -91,7 +91,7 @@ namespace RPG_Login_API.Services
             var response = new PasswordResetTokenResponseModel()
             {
                 Username = userAccount.Username,
-                PasswordResetToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenService.Roles.ResetPassword, durationMinutes: 5)
+                PasswordResetToken = _tokenService.GenerateAccessToken(userAccount.Username, TokenUtility.Roles.ResetPassword, durationMinutes: 5)
             };
 
             _logger.LogInformation($"initiate reset password successful (username: {userAccount.Username})");

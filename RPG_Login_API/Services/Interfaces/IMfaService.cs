@@ -1,6 +1,6 @@
 ﻿namespace RPG_Login_API.Services.Interfaces
 {
-    public interface IMfaSetupService
+    public interface IMfaService
     {
         public Task<(int, object?)> BeginMfaSetup(string username);
         public Task<(int, object?)> VerifyMfaSetupAsync(string username, string mfaCode);

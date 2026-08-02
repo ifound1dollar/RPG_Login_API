@@ -1,6 +1,6 @@
 ﻿using RPG_Login_API.Data;
 using RPG_Login_API.Models.MongoDB;
-using RPG_Login_API.Models.UserResponses;
+using RPG_Login_API.Models.Responses;
 using RPG_Login_API.Services.Interfaces;
 using RPG_Login_API.Utility;
 
@@ -83,21 +83,21 @@ namespace RPG_Login_API.Services
             {
                 // If email not verified, code is 1 and a confirmation email must be sent.
                 loginCode = 10;
-                role = TokenService.Roles.EmailNotVerified;
+                role = TokenUtility.Roles.EmailNotVerified;
                 _ = _emailService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
             }
             else if (userAccount.DoesPasswordNeedReset)
             {
                 // If password must be reset for security reasons, code is 2 and confirmation email must be sent.
                 loginCode = 20;
-                role = TokenService.Roles.ResetPassword;
+                role = TokenUtility.Roles.ResetPassword;
                 _ = _emailService.SendCodeToEmailAsync(userAccount.PrimaryEmail, ConfirmationCodeData.CodeContext.PasswordReset);
             }
             else if (string.IsNullOrEmpty(userAccount.ActiveMfaKey))
             {
                 // If no MFA key, then MFA is not yet enabled for this account.
                 loginCode = 30;
-                role = TokenService.Roles.MfaNotEnabled;
+                role = TokenUtility.Roles.MfaNotEnabled;
             }
             else
             {
@@ -105,12 +105,12 @@ namespace RPG_Login_API.Services
                 if (isInitialLoginStep)
                 {
                     loginCode = 1;
-                    role = TokenService.Roles.AwaitingMfa;
+                    role = TokenUtility.Roles.AwaitingMfa;
                 }
                 else
                 {
                     loginCode = 0;
-                    role = TokenService.Roles.FullAccess;
+                    role = TokenUtility.Roles.FullAccess;
                     refreshToken = _tokenService.GenerateRefreshToken(userAccount.Username, durationDays: 30);
                 }
             }

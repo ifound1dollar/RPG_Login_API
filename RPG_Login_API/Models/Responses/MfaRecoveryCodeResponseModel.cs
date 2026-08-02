@@ -1,4 +1,4 @@
-﻿namespace RPG_Login_API.Models.UserResponses
+﻿namespace RPG_Login_API.Models.Responses
 {
     public class MfaRecoveryCodeResponseModel
     {
