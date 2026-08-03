@@ -136,7 +136,7 @@ namespace RPG_Login_API
             app.UseAuthorization();
 
             // Map a basic ping method to check whether API is online, then map our actual controllers.
-            app.MapGet("/ping", () => { return Results.Ok(); } );
+            app.MapGet("/ping", () => "pong" );
             app.MapControllers();
 
             app.Run();
