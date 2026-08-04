@@ -22,10 +22,10 @@ services:
       - EmailServiceSettings__EmailAddress=${EMAIL_SERVICE_EMAIL_ADDRESS}
       - EmailServiceSettings__AppPassword=${EMAIL_SERVICE_APP_PASSWORD}
       
-      # Database settings
-      - DatabaseSettings__UserAccountsCollectionName=${MONGO_USER_ACCOUNTS_COLLECTION_NAME}
-      - DatabaseSettings__DatabaseName=${MONGO_DATABASE_NAME}
-      - DatabaseSettings__ConnectionString=${MONGO_CONNECTION_STRING}
+      # Database API settings
+      - DatabaseApiSettings__RemoteUri=${DATABASE_API_BASE_URI}
+      - DatabaseApiSettings__Username=${DATABASE_API_USER_USERNAME}
+      - DatabaseApiSettings__Password=${DATABASE_API_USER_PASSWORD}
     ports:
       # Expose externally on port 7127, internally on same port as ASPNETCORE_HTTPS_PORTS above.
       # - "7127:8081"

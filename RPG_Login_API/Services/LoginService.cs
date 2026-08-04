@@ -64,7 +64,10 @@ namespace RPG_Login_API.Services
 
             // IMPORTANT: Write new refresh token to database (should always be valid, otherwise writes empty string).
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             _logger.LogInformation($"refresh login successful (username: {response.Username}) with login code {response.LoginStatusCode}");
             return (200, response);
@@ -145,7 +148,10 @@ namespace RPG_Login_API.Services
             // SUCCESS: Generate full-access login response, then update database with the newly-generated refresh token.
             AccessResponseModel response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             _logger.LogInformation($"login completed successfully with MFA (username: {username}) with login code {response.LoginStatusCode}");
             return (200, response);
@@ -162,7 +168,10 @@ namespace RPG_Login_API.Services
 
             // UPDATE DATABASE | Remove stored refresh token and update in launcher status and time.
             userAccount.RefreshTokenHash = string.Empty;
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             _logger.LogInformation($"logout successful (username: {username})");
             return (200, "Logout successful.");
@@ -248,9 +257,14 @@ namespace RPG_Login_API.Services
             userAccount.MfaHardResetInitiatedTime = DateTime.MinValue;
             userAccount.MfaHardResetLockedUntilTime = DateTime.MinValue;
             userAccount.MfaHardResetCancelCode = string.Empty;
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
 
-            // Notify both emails that the account's MFA setup has been hard reset.
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning immediately if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return;
+            }
+
+            // IF DATABASE UPDATE SUCCESSFUL, notify both emails that the account's MFA setup has been hard reset.
             _ = _emailService.SendMfaHardResetCompletedNotifToEmailAsync(userAccount.PrimaryEmail);
             if (!string.IsNullOrEmpty(userAccount.SecondaryEmail))
             {

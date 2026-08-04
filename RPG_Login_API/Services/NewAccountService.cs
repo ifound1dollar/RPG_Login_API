@@ -67,7 +67,12 @@ namespace RPG_Login_API.Services
                 LastPasswordChangedTime = DateTime.UtcNow,
                 LastUsernameChangedTime = DateTime.UtcNow,
             };
-            await _databaseService.InsertOneAsync(userAccount);
+
+            // INSERT INTO DATABASE VIA API CALL | Try to insert, returning 500 error if failure.
+            if (!await _databaseService.InsertOneAsync(userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // GENERATE RESPONSE | Finally, after account creation, generate response and return. Always has email not verified login code.
             AccessResponseModel response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: true);
@@ -126,7 +131,10 @@ namespace RPG_Login_API.Services
             // UPDATE DATABASE | Update user account in database with newly-set 'email verified' flag.
             userAccount.IsEmailVerified = true;
             userAccount.LastEmailChangedTime = DateTime.UtcNow;     // Consider verification to be 'changed time'.
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             _logger.LogInformation($"new account email verification successful (username: {username}, verified email: {userAccount.PrimaryEmail})");
             return (200, response);

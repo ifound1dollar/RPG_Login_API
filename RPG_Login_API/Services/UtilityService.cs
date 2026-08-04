@@ -65,8 +65,11 @@ namespace RPG_Login_API.Services
             if (userAccount.AccountLockedUntil > now || userAccount.MfaHardResetLockedUntilTime > now)
             {
                 // Ensure no refresh token remains if locked.
-                userAccount.RefreshTokenHash = string.Empty;
-                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+                if (userAccount.RefreshTokenHash != string.Empty)
+                {
+                    userAccount.RefreshTokenHash = string.Empty;
+                    await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount);    // Do not check return value.
+                }
 
                 _logger.LogInformation($"{context} failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {userAccount.Username})");
                 return false;
@@ -136,7 +139,7 @@ namespace RPG_Login_API.Services
                 // If username is in use but account email was never verified and was created >30 days ago, delete it (zombie).
                 if (!existingAccount.IsEmailVerified && DateTime.UtcNow - existingAccount.AccountCreatedTime > TimeSpan.FromDays(30))
                 {
-                    await _databaseService.DeleteOneByEmailAsync(existingAccount.PrimaryEmail);
+                    await _databaseService.DeleteOneByIdAsync(existingAccount.Id);
                     return true;                // Deleted zombie, so username IS available.
                 }
 
@@ -157,7 +160,7 @@ namespace RPG_Login_API.Services
                 // If email is in use but account email was never verified and was created >30 days ago, delete it (zombie).
                 if (!existingAccount.IsEmailVerified && DateTime.UtcNow - existingAccount.AccountCreatedTime > TimeSpan.FromDays(30))
                 {
-                    await _databaseService.DeleteOneByEmailAsync(existingAccount.PrimaryEmail);
+                    await _databaseService.DeleteOneByIdAsync(existingAccount.Id);
                     return true;                // Deleted zombie, so email IS available.
                 }
 
@@ -183,7 +186,7 @@ namespace RPG_Login_API.Services
             {
                 // This means the token in the database is invalid, so remove it.
                 userAccount.RefreshTokenHash = string.Empty;
-                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+                await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount);    // Do not check success state.
 
                 _logger.LogInformation($"refresh login failed: user-provided token does not match stored token or is expired (username: {userAccount.Username})");
                 return false;

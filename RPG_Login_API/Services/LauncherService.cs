@@ -71,7 +71,12 @@ namespace RPG_Login_API.Services
             // Update in launcher status and time for this account in the database.
             userAccount.InLauncherStatus = true;
             userAccount.LastInLauncherTime = DateTime.UtcNow;
-            await _databaseService.UpdateOneByUsernameAsync(username, userAccount);
+
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             _logger.LogInformation($"ping in launcher successful (username: {username})");
             return (204, string.Empty);
@@ -95,7 +100,12 @@ namespace RPG_Login_API.Services
             // Update in launcher status and set time of exit to last in launcher time.
             userAccount.InLauncherStatus = false;
             userAccount.LastInLauncherTime = DateTime.UtcNow;
-            await _databaseService.UpdateOneByUsernameAsync(username, userAccount);
+
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             _logger.LogInformation($"notify launcher exit successful (username: {username})");
             return (204, "");

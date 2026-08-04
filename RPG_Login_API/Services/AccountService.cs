@@ -79,7 +79,12 @@ namespace RPG_Login_API.Services
             userAccount.Username = newUsername;
             userAccount.LastUsernameChangedTime = DateTime.UtcNow;
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            await _databaseService.UpdateOneByUsernameAsync(existingUsername, userAccount);     // Query by old username.
+
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // NOTIFY ACCOUNT EMAIL OF USERNAME CHANGE | Do not await.
             _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username, IEmailService.NotificationContext.UsernameChanged);
@@ -132,7 +137,13 @@ namespace RPG_Login_API.Services
             userAccount.IsEmailVerified = true;                         // Reset requires email anyway, so implicitly verify email.
             userAccount.LastPasswordChangedTime = DateTime.UtcNow;
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
+            
 
             // NOTIFY ACCOUNT EMAIL OF PASSWORD CHANGE | Do not await.
             _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username, IEmailService.NotificationContext.PasswordChanged);
@@ -178,7 +189,12 @@ namespace RPG_Login_API.Services
 
             // SUCCESS: ADD PENDING NEW EMAIL TO DOCUMENT | Update pending new email field, but do NOT set last changed time or logout yet.
             userAccount.PendingNewPrimaryEmail = newEmail;
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // SEND CONFIRMATION CODE TO NEW EMAIL | Do not await, because sending email can take a while.
             _ = _emailService.SendCodeToEmailAsync(newEmail, ConfirmationCodeData.CodeContext.PrimaryEmailVerification);
@@ -236,7 +252,9 @@ namespace RPG_Login_API.Services
             {
                 // Clear pending field (is not available).
                 userAccount.PendingNewPrimaryEmail = string.Empty;
-                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+                // Replace in database via API call, but do not check return value (returns 500 error code anyway).
+                await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount);
 
                 return (500, "An unexpected error occured during email change verification, please try again.");    // GENERIC FOR SECURITY
             }
@@ -253,7 +271,12 @@ namespace RPG_Login_API.Services
             userAccount.PendingNewPrimaryEmail = string.Empty;      // Clear pending new email upon verification; verified email is now main email.
             userAccount.LastEmailChangedTime = DateTime.UtcNow;     // Consider verification to be 'changed time'.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // NOTIFY NEW EMAIL OF PRIMARY EMAIL CHANGE | Do not await.
             _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username, IEmailService.NotificationContext.PrimaryEmailChanged);
@@ -293,7 +316,12 @@ namespace RPG_Login_API.Services
 
             // SUCCESS: ADD PENDING NEW EMAIL TO DOCUMENT | Update pending new email field, but do NOT set last changed time or logout yet.
             userAccount.PendingNewSecondaryEmail = secondaryEmail;
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // SEND CONFIRMATION CODE TO NEW EMAIL | Do not await, because sending email can take a while.
             _ = _emailService.SendCodeToEmailAsync(secondaryEmail, ConfirmationCodeData.CodeContext.SecondaryEmailVerification);
@@ -352,7 +380,9 @@ namespace RPG_Login_API.Services
             {
                 // Clear pending field (is not available).
                 userAccount.PendingNewSecondaryEmail = string.Empty;
-                await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+                // Update account via database API request, but do not check return value (returns 500 error below anyway).
+                await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount);
 
                 return (500, "An unexpected error occured during secondary email verification, please try again.");     // GENERIC FOR SECURITY
             }
@@ -365,7 +395,12 @@ namespace RPG_Login_API.Services
             userAccount.SecondaryEmail = userAccount.PendingNewSecondaryEmail;
             userAccount.PendingNewSecondaryEmail = string.Empty;
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // NOTIFY BOTH PRIMARY AND NEW SECONDARY EMAIL OF CHANGE | Do not await.
             _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username, IEmailService.NotificationContext.SecondaryEmailChanged);

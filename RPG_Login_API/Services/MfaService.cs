@@ -45,7 +45,10 @@ namespace RPG_Login_API.Services
 
             // Generate new encrypted MFA secret key and update document with this pending key.
             userAccount.PendingMfaKey = _mfaCodeService.GenerateMfaSecretKeyEncryptedBase64();
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // Finally, generate an OTP URI for this user, then return an MfaSetupResponseModel with the URI.
             string otpUri = _mfaCodeService.GenerateOtpUriForUser(userAccount.Username, userAccount.PendingMfaKey);
@@ -94,7 +97,12 @@ namespace RPG_Login_API.Services
             userAccount.PendingMfaKey = string.Empty;
             userAccount.MfaRecoveryCodeHash = HashUtility.GenerateNewMfaRecoveryCodeHash(response.RecoveryCode);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             _logger.LogInformation($"verify MFA setup successful (username: {username})");
             return (200, response);
@@ -123,7 +131,10 @@ namespace RPG_Login_API.Services
 
             // Else correct key, so generate new encrypted MFA secret key and update document with this pending key.
             userAccount.PendingMfaKey = _mfaCodeService.GenerateMfaSecretKeyEncryptedBase64();
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // Finally, generate an OTP URI for this user, then return an MfaSetupResponseModel with the URI.
             string otpUri = _mfaCodeService.GenerateOtpUriForUser(userAccount.Username, userAccount.PendingMfaKey);
@@ -158,7 +169,10 @@ namespace RPG_Login_API.Services
             // Update database with new MFA recovery code hash and refresh token hash.
             userAccount.MfaRecoveryCodeHash = HashUtility.GenerateNewMfaRecoveryCodeHash(response.RecoveryCode);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             _logger.LogInformation($"regenerate MFA recovery code successful (username: {username})");
             return (200, response);
@@ -233,7 +247,10 @@ namespace RPG_Login_API.Services
             userAccount.MfaHardResetInitiatedTime = DateTime.UtcNow;
             userAccount.MfaHardResetLockedUntilTime = (isPrimary) ? DateTime.UtcNow.AddDays(7) : DateTime.UtcNow.AddHours(24);
             userAccount.MfaHardResetCancelCode = GenerateMfaHardResetCancelCode();
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // SEND EMAIL WITH CANCEL LINK TO BOTH PRIMARY AND SECONDARY EMAIL | Do not await.
             _ = _emailService.SendMfaHardResetInitiatedToEmailAsync(userAccount.PrimaryEmail, username, userAccount.MfaHardResetCancelCode, userAccount.MfaHardResetLockedUntilTime);
@@ -270,7 +287,12 @@ namespace RPG_Login_API.Services
             userAccount.MfaHardResetLockedUntilTime = DateTime.MinValue;
             userAccount.MfaHardResetCancelCode = string.Empty;
             userAccount.DoesPasswordNeedReset = true;
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+
+            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // NOTIFY BOTH EMAILS OF SUCCESSFUL CANCEL
             _ = _emailService.SendMfaHardResetCancelledNotifToEmailAsync(userAccount.PrimaryEmail);

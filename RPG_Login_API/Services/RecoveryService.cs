@@ -133,7 +133,10 @@ namespace RPG_Login_API.Services
             userAccount.IsEmailVerified = true;                         // Reset requires email anyway, so implicitly verify email.
             userAccount.LastPasswordChangedTime = DateTime.UtcNow;
             userAccount.RefreshTokenHash = string.Empty;                // Reset just in case anyone was logged in at time of change.
-            await _databaseService.UpdateOneByUsernameAsync(userAccount.Username, userAccount);
+            if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             // NOTIFY ACCOUNT EMAIL OF PASSWORD CHANGE | Do not await.
             _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username,

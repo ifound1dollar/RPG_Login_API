@@ -33,10 +33,10 @@ namespace RPG_Login_API
 
 
 
-            // Database settings. These are stored in secrets.json, accessible by [right click project] -> Manage User Secrets.
-            builder.Services.Configure<DatabaseSettings>(builder.Configuration.GetSection("DatabaseSettings"));
+            // Database settings, all settings pulled from .env using docker compose to translate.
+            builder.Services.Configure<DatabaseApiSettings>(builder.Configuration.GetSection("DatabaseApiSettings"));
 
-            // Security token (JWT) settings, also stored in secrets.json.
+            // Security token (JWT) settings.
             var tokenSettings = builder.Configuration.GetSection("TokenSettings");
             builder.Services.Configure<TokenSettings>(tokenSettings);
 
@@ -53,7 +53,7 @@ namespace RPG_Login_API
             // Add our desired services. Registers them to enable constructor injection.
             // NON-CONTROLLER SERVICES
             builder.Services.AddSingleton<IUtilityService, UtilityService>();
-            builder.Services.AddSingleton<IDatabaseService, DatabaseService>();
+            builder.Services.AddSingleton<IDatabaseService, DatabaseApiService>();
             builder.Services.AddSingleton<ITokenService, TokenService>();
             builder.Services.AddSingleton<IEmailService, EmailService>();
             builder.Services.AddSingleton<IMfaCodeService, MfaCodeService>();
@@ -108,15 +108,6 @@ namespace RPG_Login_API
             builder.Services.AddSwaggerGen();
 
             var app = builder.Build();
-
-
-
-            // After build but before run, test the database connection.
-            using (var scope = app.Services.CreateScope())
-            {
-                var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
-                if (!databaseService.CheckConnectionStatus()) return;   // Exit application if not connected.
-            }
 
 
 
