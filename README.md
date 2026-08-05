@@ -23,7 +23,7 @@ Dependency Injection (DI) is heavily leveraged by ASP.NET Core web applications 
 
 ### Database solution
 
-Currently, MongoDB is the database solution used to store account data. This leverages the official .NET MongoDB Driver NuGet package, which offers a robust toolset for interacting with MongoDB instances/databases/collections. User account objects are defined as MongoDB BSON models and used by the DatabaseService class to perform CRUD operations on the database. The MongoDB driver handles all conversion to and from BSON/JSON, given that the correct model classes are implemented.
+The entire backend runs on MongoDB as the database solution. The database is accessed via a dedicated, authenticated database API. This API allows querying the database for user accounts by ObjectId, username, email, or secondary email, as well as all insert, update, replace, and delete operations (update and delete by ID only because it never changes). The UserAccountModel class which represents the user account document in the database must always exactly match the model in the database API, which can be retrieved via its documentation.
 
 ### Logging
 

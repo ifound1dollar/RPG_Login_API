@@ -22,18 +22,12 @@ namespace RPG_Login_API.Services.Interfaces
 
         // PATCH
         public Task<bool> UpdateOneByIdAsync<T>(string id, T patchData);
-        public Task<bool> UpdateOneByUsernameAsync<T>(string username, T patchData);
-        public Task<bool> UpdateOneByEmailAsync<T>(string email, T patchData);
 
         // PUT
         public Task<bool> ReplaceOneByIdAsync(string id, UserAccountModel model);
-        public Task<bool> ReplaceOneByUsernameAsync(string username, UserAccountModel model);
-        public Task<bool> ReplaceOneByEmailAsync(string email, UserAccountModel model);
 
         // DELETE
         public Task<bool> DeleteOneByIdAsync(string id);
-        public Task<bool> DeleteOneByUsernameAsync(string username);
-        public Task<bool> DeleteOneByEmailAsync(string email);
 
         // INFO
         public Task<bool> IsSecondaryEmailInUseAsync(string secondaryEmail);

@@ -19,6 +19,7 @@ namespace RPG_Login_API.Services
         private readonly DatabaseApiSettings _settings;
 
         private readonly HttpClient _httpClient;
+        private readonly JsonSerializerOptions _jsonOptions;
 
         private ApiUserAccessResponse? accessTokenData = null;
 
@@ -31,6 +32,12 @@ namespace RPG_Login_API.Services
             _httpClient = new()
             {
                 BaseAddress = new Uri(settings.Value.RemoteUri)
+            };
+
+            // Create default JSON serializer options, specifically to remove the default 'to camelCase' naming policy.
+            _jsonOptions = new()
+            {
+                PropertyNamingPolicy = null     // Retains PascalCase
             };
         }
 
@@ -62,13 +69,13 @@ namespace RPG_Login_API.Services
 
             try
             {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Get, "/users", accessTokenData?.AccessToken);
+                // Make request to database API to find user accounts. HttpClient has access token automatically configured.
+                var rawResponse = await _httpClient.GetAsync($"/users");
                 if (!rawResponse.IsSuccessStatusCode)
                 {
                     // If not success status code, then there was some error, so log it and return.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to get all user accounts from database API: " + errorMessage);
+                    _logger.LogInformation("Failed to get all user accounts from database API: " + errorMessage);
                     return null;
                 }
 
@@ -79,7 +86,7 @@ namespace RPG_Login_API.Services
             }
             catch (Exception ex)
             {
-                //_logger.LogError("Failed to get all user accounts from database API: " + ex.Message);
+                _logger.LogError("[EXCEPTION] Failed to get all user accounts from database API: " + ex.Message);
                 return null;
             }
         }
@@ -90,13 +97,13 @@ namespace RPG_Login_API.Services
 
             try
             {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Get, $"/users/id/{id}", accessTokenData?.AccessToken);
+                // Make request to database API to find user account by ID (ObjectId). HttpClient has access token automatically configured.
+                var rawResponse = await _httpClient.GetAsync($"/users/id/{id}");
                 if (!rawResponse.IsSuccessStatusCode)
                 {
                     // If not success status code, then there was some error, so log it and return.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to get user account by ID from database API: " + errorMessage);
+                    _logger.LogInformation($"Failed to get user account by ID from database API (ID: {id}): " + errorMessage);
                     return null;
                 }
 
@@ -107,7 +114,7 @@ namespace RPG_Login_API.Services
             }
             catch (Exception ex)
             {
-                //_logger.LogError("Failed to get user account by ID from database API: " + ex.Message);
+                _logger.LogError("[EXCEPTION] Failed to get user account by ID from database API: " + ex.Message);
                 return null;
             }
         }
@@ -118,13 +125,13 @@ namespace RPG_Login_API.Services
 
             try
             {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Get, $"/users/username/{username}", accessTokenData?.AccessToken);
+                // Make request to database API to find user account by username. HttpClient has access token automatically configured.
+                var rawResponse = await _httpClient.GetAsync($"/users/username/{username}");
                 if (!rawResponse.IsSuccessStatusCode)
                 {
                     // If not success status code, then there was some error, so log it and return.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to get user account by username from database API: " + errorMessage);
+                    _logger.LogInformation($"Failed to get user account by username from database API (username: {username}): " + errorMessage);
                     return null;
                 }
 
@@ -135,7 +142,7 @@ namespace RPG_Login_API.Services
             }
             catch (Exception ex)
             {
-                //_logger.LogError("Failed to get user account by username from database API: " + ex.Message);
+                _logger.LogError("[EXCEPTION] Failed to get user account by username from database API: " + ex.Message);
                 return null;
             }
         }
@@ -146,13 +153,13 @@ namespace RPG_Login_API.Services
 
             try
             {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Get, $"/users/email/{email}", accessTokenData?.AccessToken);
+                // Make request to database API to find user account by email. HttpClient has access token automatically configured.
+                var rawResponse = await _httpClient.GetAsync($"/users/email/{email}");
                 if (!rawResponse.IsSuccessStatusCode)
                 {
                     // If not success status code, then there was some error, so log it and return.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to get user account by email from database API: " + errorMessage);
+                    _logger.LogInformation($"Failed to get user account by email from database API (email: {email}): " + errorMessage);
                     return null;
                 }
 
@@ -163,7 +170,7 @@ namespace RPG_Login_API.Services
             }
             catch (Exception ex)
             {
-                //_logger.LogError("Failed to get user account by email from database API: " + ex.Message);
+                _logger.LogError("[EXCEPTION] Failed to get user account by email from database API: " + ex.Message);
                 return null;
             }
         }
@@ -176,14 +183,13 @@ namespace RPG_Login_API.Services
 
             try
             {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Post, $"/users", accessTokenData?.AccessToken,
-                    CreateStringContent(new { model }));        // Directly serialize UserAccountModel into string content.
+                // Make request, automatically parsing UserAccountModel to JSON. HttpClient has access token automatically configured.
+                var rawResponse = await _httpClient.PostAsJsonAsync($"/users", model, _jsonOptions);
                 if (!rawResponse.IsSuccessStatusCode)
                 {
                     // If not success status code, then there was some error, so log it and return.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to insert user account to database API: " + errorMessage);
+                    _logger.LogInformation($"Failed to insert user account to database API (username: {model.Username}): " + errorMessage);
                     return false;
                 }
 
@@ -203,14 +209,13 @@ namespace RPG_Login_API.Services
         {
             try
             {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Patch, $"/users/id/{id}", accessTokenData?.AccessToken,
-                    CreateStringContent(new { patchData }));    // Directly serialize anonymous patch data into string content.
+                // Make request, automatically parsing anonymous data to JSON. HttpClient has access token automatically configured.
+                var rawResponse = await _httpClient.PatchAsJsonAsync($"/users/id/{id}", patchData, _jsonOptions);
                 if (!rawResponse.IsSuccessStatusCode)
                 {
                     // If not success status code, then there was some error, so log it and return.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to update user account by ID to database API: " + errorMessage);
+                    _logger.LogInformation($"Failed to update user account by ID in database API (ID: {id}): " + errorMessage);
                     return false;
                 }
 
@@ -219,57 +224,7 @@ namespace RPG_Login_API.Services
             }
             catch (Exception ex)
             {
-                //_logger.LogError("Failed to update user account by ID to database API: " + ex.Message);
-                return false;
-            }
-        }
-
-        public async Task<bool> UpdateOneByUsernameAsync<T>(string username, T patchData)
-        {
-            try
-            {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Patch, $"/users/username/{username}", accessTokenData?.AccessToken,
-                    CreateStringContent(new { patchData }));    // Directly serialize anonymous patch data into string content.
-                if (!rawResponse.IsSuccessStatusCode)
-                {
-                    // If not success status code, then there was some error, so log it and return.
-                    string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to update user account by username to database API: " + errorMessage);
-                    return false;
-                }
-
-                // Else good status code, so simply return true.
-                return true;
-            }
-            catch (Exception ex)
-            {
-                //_logger.LogError("Failed to update user account by username to database API: " + ex.Message);
-                return false;
-            }
-        }
-
-        public async Task<bool> UpdateOneByEmailAsync<T>(string email, T patchData)
-        {
-            try
-            {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Patch, $"/users/email/{email}", accessTokenData?.AccessToken,
-                    CreateStringContent(new { patchData }));    // Directly serialize anonymous patch data into string content.
-                if (!rawResponse.IsSuccessStatusCode)
-                {
-                    // If not success status code, then there was some error, so log it and return.
-                    string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to update user account by email to database API: " + errorMessage);
-                    return false;
-                }
-
-                // Else good status code, so simply return true.
-                return true;
-            }
-            catch (Exception ex)
-            {
-                //_logger.LogError("Failed to update user account by email to database API: " + ex.Message);
+                _logger.LogError("[EXCEPTION] Failed to update user account by ID in database API: " + ex.Message);
                 return false;
             }
         }
@@ -282,21 +237,13 @@ namespace RPG_Login_API.Services
 
             try
             {
-                // TODO: MAKE ALL USERACCOUNTMODEL ENDPOINTS USE THIS INSTEAD OF CUSTOM SERIALIZATION
-
-                //var request = new HttpRequestMessage(HttpMethod.Put, $"/users/id/{id}");
-                //request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessTokenData?.AccessToken);
-
-                var rawResponse = await _httpClient.PutAsJsonAsync($"/users/id/{id}", model);
-
-                //// Make request to API and check response code.
-                //var rawResponse = await PerformApiRequestAsync(HttpMethod.Put, $"/users/id/{id}", accessTokenData?.AccessToken,
-                //    CreateStringContent(new { model }));        // Directly serialize UserAccountModel into string content.
+                // Make request, automatically parsing UserAccountModel to JSON. HttpClient has access token automatically configured.
+                var rawResponse = await _httpClient.PutAsJsonAsync($"/users/id/{id}", model, _jsonOptions);
                 if (!rawResponse.IsSuccessStatusCode)
                 {
                     // If not success status code, then there was some error, so log it and return.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to replace user account by ID to database API: " + errorMessage);
+                    _logger.LogInformation($"Failed to replace user account by ID in database API (ID: {model.Id}): " + errorMessage);
                     return false;
                 }
 
@@ -305,60 +252,7 @@ namespace RPG_Login_API.Services
             }
             catch (Exception ex)
             {
-                //_logger.LogError("Failed to replace user account by ID to database API: " + ex.Message);
-                return false;
-            }
-        }
-
-        public async Task<bool> ReplaceOneByUsernameAsync(string username, UserAccountModel model)
-        {
-            if (!await EnsureAccessTokenIsValid()) return false;
-
-            try
-            {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Put, $"/users/username/{username}", accessTokenData?.AccessToken,
-                    CreateStringContent(new { model }));        // Directly serialize UserAccountModel into string content.
-                if (!rawResponse.IsSuccessStatusCode)
-                {
-                    // If not success status code, then there was some error, so log it and return.
-                    string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to replace user account by username to database API: " + errorMessage);
-                    return false;
-                }
-
-                // Else good status code, so simply return true.
-                return true;
-            }
-            catch (Exception ex)
-            {
-                //_logger.LogError("Failed to replace user account by username to database API: " + ex.Message);
-                return false;
-            }
-        }
-        public async Task<bool> ReplaceOneByEmailAsync(string email, UserAccountModel model)
-        {
-            if (!await EnsureAccessTokenIsValid()) return false;
-
-            try
-            {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Put, $"/users/email/{email}", accessTokenData?.AccessToken,
-                    CreateStringContent(new { model }));        // Directly serialize UserAccountModel into string content.
-                if (!rawResponse.IsSuccessStatusCode)
-                {
-                    // If not success status code, then there was some error, so log it and return.
-                    string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to replace user account by email to database API: " + errorMessage);
-                    return false;
-                }
-
-                // Else good status code, so simply return true.
-                return true;
-            }
-            catch (Exception ex)
-            {
-                //_logger.LogError("Failed to replace user account by email to database API: " + ex.Message);
+                _logger.LogError("[EXCEPTION] Failed to replace user account by ID in database API: " + ex.Message);
                 return false;
             }
         }
@@ -371,13 +265,13 @@ namespace RPG_Login_API.Services
 
             try
             {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Delete, $"/users/id/{id}", accessTokenData?.AccessToken);
+                // Make request to database API to delete item by ID. HttpClient has access token automatically configured.
+                var rawResponse = await _httpClient.DeleteAsync($"/users/id/{id}");
                 if (!rawResponse.IsSuccessStatusCode)
                 {
                     // If not success status code, then there was some error, so log it and return.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to delete user account by ID from database API: " + errorMessage);
+                    _logger.LogInformation($"Failed to delete user account by ID from database API (ID: {id}): " + errorMessage);
                     return false;
                 }
 
@@ -386,59 +280,7 @@ namespace RPG_Login_API.Services
             }
             catch (Exception ex)
             {
-                //_logger.LogError("Failed to delete user account by ID from database API: " + ex.Message);
-                return false;
-            }
-        }
-
-        public async Task<bool> DeleteOneByUsernameAsync(string username)
-        {
-            if (!await EnsureAccessTokenIsValid()) return false;
-
-            try
-            {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Delete, $"/users/username/{username}", accessTokenData?.AccessToken);
-                if (!rawResponse.IsSuccessStatusCode)
-                {
-                    // If not success status code, then there was some error, so log it and return.
-                    string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to delete user account by username from database API: " + errorMessage);
-                    return false;
-                }
-
-                // Else good status code, so simply return true.
-                return true;
-            }
-            catch (Exception ex)
-            {
-                //_logger.LogError("Failed to delete user account by username from database API: " + ex.Message);
-                return false;
-            }
-        }
-
-        public async Task<bool> DeleteOneByEmailAsync(string email)
-        {
-            if (!await EnsureAccessTokenIsValid()) return false;
-
-            try
-            {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Delete, $"/users/email/{email}", accessTokenData?.AccessToken);
-                if (!rawResponse.IsSuccessStatusCode)
-                {
-                    // If not success status code, then there was some error, so log it and return.
-                    string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to delete user account by email from database API: " + errorMessage);
-                    return false;
-                }
-
-                // Else good status code, so simply return true.
-                return true;
-            }
-            catch (Exception ex)
-            {
-                //_logger.LogError("Failed to delete user account by email from database API: " + ex.Message);
+                _logger.LogError("[EXCEPTION] Failed to delete user account by ID from database API: " + ex.Message);
                 return false;
             }
         }
@@ -451,20 +293,26 @@ namespace RPG_Login_API.Services
 
             try
             {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Get, $"/users/secondary-email/{secondaryEmail}", accessTokenData?.AccessToken);
+                // Make request to database API to find user account by secondary email. HttpClient has access token automatically configured.
+                var rawResponse = await _httpClient.GetAsync($"/users/email-secondary/{secondaryEmail}");
                 if (!rawResponse.IsSuccessStatusCode)
                 {
-                    // If not success status code, then there was some error, so log it and return.
+                    // If status code is 404, then the email is not in use, so return false.
+                    if (rawResponse.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        return false;
+                    }
+
+                    // Else any other status code is an error, so read it and return true (in use) to be safe.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    //_logger.LogError("Failed to check whether secondary email is in use from database API: " + errorMessage);
-                    return true;        // Assume true to be safe.
+                    _logger.LogInformation($"Failed to check whether secondary email is in use from database API (secondary email: {secondaryEmail}): " + errorMessage);
+                    return true;
                 }
 
                 // Parse raw response into usable data. Will automatically throw exception within method on failure.
                 var responseData = await rawResponse.Content.ReadFromJsonAsync<UserAccountModel>() ?? throw new JsonException();
 
-                // If response data is null, then is not in use. Else in use.
+                // If response data is not null (retrieved valid account), then in use so return true.
                 if (responseData != null)
                 {
                     return true;
@@ -473,7 +321,7 @@ namespace RPG_Login_API.Services
             }
             catch (Exception ex)
             {
-                //_logger.LogError("Failed to check whether secondary email is in use from database API: " + ex.Message);
+                _logger.LogError("[EXCEPTION] Failed to check whether secondary email is in use from database API: " + ex.Message);
                 return true;            // Assume true to be safe.
             }
         }
@@ -509,17 +357,17 @@ namespace RPG_Login_API.Services
         {
             try
             {
-                // Make request to API and check response code.
-                var rawResponse = await PerformApiRequestAsync(HttpMethod.Post, "/auth/login", null, CreateStringContent(new
+                // Make request to database API to log in as API user. Create anonymous type for username and password payload.
+                var rawResponse = await _httpClient.PostAsJsonAsync($"/auth/login", new
                 {
                     Username = _settings.Username,
                     Password = _settings.Password
-                }));
+                }, _jsonOptions);
                 if (!rawResponse.IsSuccessStatusCode)
                 {
                     // If not success status code, then there was some error, so log it and return.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    _logger.LogError("Failed to log into database API: " + errorMessage);
+                    _logger.LogError("failed to log into database API: " + errorMessage);
                     return false;
                 }
 
@@ -529,11 +377,12 @@ namespace RPG_Login_API.Services
                 // Ensure access response has valid fields.
                 if (string.IsNullOrEmpty(responseModel.AccessToken) || responseModel.AccessTokenExpiration < DateTime.UtcNow)
                 {
-                    _logger.LogError("Failed to log into database API: invalid data present in ApiUserAccessResponse");
+                    _logger.LogError("failed to log into database API: malformed ApiUserAccessResponse data");
                     return false;
                 }
 
-                // Else successful, so set local field and return true.
+                // Else successful, so store tokens and expiration AND set HttpClient bearer token (sent automatically on request).
+                _logger.LogInformation("successfully (re)logged into database API");
                 _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", responseModel.AccessToken);
                 accessTokenData = responseModel;
                 return true;
@@ -552,37 +401,5 @@ namespace RPG_Login_API.Services
 
         #endregion
 
-        #region Private: Request Creation and Execution
-
-        private async Task<HttpResponseMessage> PerformApiRequestAsync(HttpMethod method, string requestUri, string? authToken = null,
-            StringContent? content = null)
-        {
-            // Create request object from required data.
-            var request = new HttpRequestMessage(method, requestUri);
-
-            // Add authorization if applicable (non-null).
-            if (authToken != null)
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authToken);
-            }
-
-            // If content is present, add it to request.
-            if (content != null)
-            {
-                request.Content = content;
-            }
-
-            return await _httpClient.SendAsync(request);
-        }
-
-        private static StringContent CreateStringContent<T>(T data)
-        {
-            return new StringContent(
-                JsonSerializer.Serialize(data),
-                Encoding.UTF8,
-                "application/json");
-        }
-
-        #endregion
     }
 }
