@@ -52,11 +52,12 @@ namespace RPG_Login_API.Models.MongoDB
 
 
 
-        public ActiveStatusesModel ActiveStatuses { get; set; } = new();
+        // NOTE: BELOW OBJECTS ARE INIT-ONLY, PREVENTING REPLACEMENT BUT ALLOWING INTERNAL PROPERTIES TO BE SET.
+        public ActiveStatusesModel ActiveStatuses { get; init; } = new();
 
-        public TimeTrackersModel TimeTrackers { get; set; } = new();
+        public TimeTrackersModel TimeTrackers { get; init; } = new();
 
-        public GameDataModel GameData { get; set; } = new();
+        public GameDataModel GameData { get; init; } = new();
 
 
 

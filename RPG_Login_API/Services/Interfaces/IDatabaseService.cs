@@ -21,7 +21,7 @@ namespace RPG_Login_API.Services.Interfaces
         public Task<bool> InsertOneAsync(UserAccountModel model);
 
         // PATCH
-        public Task<bool> UpdateOneByIdAsync<T>(string id, T patchData);
+        public Task<bool> UpdateOneByIdAsync(string id, UserAccountPatch patchData);
 
         // PUT
         public Task<bool> ReplaceOneByIdAsync(string id, UserAccountModel model);

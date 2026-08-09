@@ -8,6 +8,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using static Org.BouncyCastle.Crypto.Engines.SM2Engine;
 using static QRCoder.PayloadGenerator;
 
@@ -34,10 +35,11 @@ namespace RPG_Login_API.Services
                 BaseAddress = new Uri(settings.Value.RemoteUri)
             };
 
-            // Create default JSON serializer options, specifically to remove the default 'to camelCase' naming policy.
+            // Create default JSON serializer options.
             _jsonOptions = new()
             {
-                PropertyNamingPolicy = null     // Retains PascalCase
+                PropertyNamingPolicy = null,                                    // Retains PascalCase
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull    // Does not write null properties (necessary for patch).
             };
         }
 
@@ -205,7 +207,7 @@ namespace RPG_Login_API.Services
 
 
 
-        public async Task<bool> UpdateOneByIdAsync<T>(string id, T patchData)
+        public async Task<bool> UpdateOneByIdAsync(string id, UserAccountPatch patchData)
         {
             try
             {

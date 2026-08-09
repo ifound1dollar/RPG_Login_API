@@ -69,10 +69,13 @@ namespace RPG_Login_API.Services
             }
 
             // UPDATE LAUNCHER STATUS IN DATABASE | Patch with just the two values, returning 500 if any failure.
-            var patchData = new
+            var patchData = new UserAccountPatch()
             {
-                InLauncherStatus = true,
-                LastInLauncherTime = DateTime.UtcNow
+                ActiveStatuses = new()
+                {
+                    InLauncherStatus = true,
+                    LastInLauncherTime = DateTime.UtcNow
+                }
             };
             if (!await _databaseService.UpdateOneByIdAsync(userAccount.Id, patchData))
             {
@@ -99,10 +102,13 @@ namespace RPG_Login_API.Services
             }
 
             // UPDATE LAUNCHER STATUS IN DATABASE | Patch with just the two values, returning 500 if any failure.
-            var patchData = new
+            var patchData = new UserAccountPatch()
             {
-                InLauncherStatus = false,
-                LastInLauncherTime = DateTime.UtcNow
+                ActiveStatuses = new()
+                {
+                    InLauncherStatus = false,
+                    LastInLauncherTime = DateTime.UtcNow
+                }
             };
             if (!await _databaseService.UpdateOneByIdAsync(userAccount.Id, patchData))
             {
