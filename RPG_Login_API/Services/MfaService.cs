@@ -85,26 +85,26 @@ namespace RPG_Login_API.Services
                 return (500, "An unexpected error occurred during MFA setup verification, please try again.");
             }
 
-            // Else request is valid, so generate full access response with recovery code.
+            // Else request is valid, so first replace active key with pending.
+            userAccount.ActiveMfaKey = userAccount.PendingMfaKey;
+            userAccount.PendingMfaKey = string.Empty;
+
+            //Then, generate full access response with recovery code.
             var accessResponse = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);    // verify MFA = full login
             var response = new MfaRecoveryCodeResponseModel(accessResponse)
             {
                 RecoveryCode = _mfaCodeService.GenerateMfaRecoveryCode()    // Generate new here, rest of response is passed into constructor.
             };
 
-            // Move pending MFA key to active, then update database with new MFA recovery code hash and refresh token hash.
-            userAccount.ActiveMfaKey = userAccount.PendingMfaKey;
-            userAccount.PendingMfaKey = string.Empty;
+            // Finally, update database with MFA recovery code hash and refresh token hash.            
             userAccount.MfaRecoveryCodeHash = HashUtility.GenerateNewMfaRecoveryCodeHash(response.RecoveryCode);
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
-
-            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
             if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
             {
                 return (500, "An unexpected database error occurred during the request.");
             }
 
-            _logger.LogInformation($"verify MFA setup successful (username: {username})");
+            _logger.LogInformation($"verify MFA setup successful (username: {username}) with login code {response.LoginStatusCode}");
             return (200, response);
         }
 
@@ -174,7 +174,7 @@ namespace RPG_Login_API.Services
                 return (500, "An unexpected database error occurred during the request.");
             }
 
-            _logger.LogInformation($"regenerate MFA recovery code successful (username: {username})");
+            _logger.LogInformation($"regenerate MFA recovery code successful (username: {username}) with login code {response.LoginStatusCode}");
             return (200, response);
         }
 

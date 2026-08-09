@@ -369,7 +369,7 @@ namespace RPG_Login_API.Services
                 {
                     // If not success status code, then there was some error, so log it and return.
                     string errorMessage = await rawResponse.Content.ReadAsStringAsync();
-                    _logger.LogError("failed to log into database API: " + errorMessage);
+                    _logger.LogError("[DATABASE API LOGIN] failed to log into database API: " + errorMessage);
                     return false;
                 }
 
@@ -379,24 +379,24 @@ namespace RPG_Login_API.Services
                 // Ensure access response has valid fields.
                 if (string.IsNullOrEmpty(responseModel.AccessToken) || responseModel.AccessTokenExpiration < DateTime.UtcNow)
                 {
-                    _logger.LogError("failed to log into database API: malformed ApiUserAccessResponse data");
+                    _logger.LogError("[DATABASE API LOGIN] failed to log into database API: malformed ApiUserAccessResponse data");
                     return false;
                 }
 
                 // Else successful, so store tokens and expiration AND set HttpClient bearer token (sent automatically on request).
-                _logger.LogInformation("successfully (re)logged into database API");
+                _logger.LogInformation("[DATABASE API LOGIN] successfully (re)logged into database API");
                 _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", responseModel.AccessToken);
                 accessTokenData = responseModel;
                 return true;
             }
             catch (JsonException ex)
             {
-                _logger.LogError("Failed to log into database API: " + ex.Message);
+                _logger.LogError("[DATABASE API LOGIN] failed to log into database API: " + ex.Message);
                 return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError("Failed to log into database API: " + ex.Message);
+                _logger.LogError("[DATABASE API LOGIN] failed to log into database API: " + ex.Message);
                 return false;
             }
         }

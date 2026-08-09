@@ -71,16 +71,15 @@ namespace RPG_Login_API.Services
                 return (409, "New username cannot be the same as old username.");
             }
 
-            // SUCCESS: RE-LOGIN USER | Now that account state has changed, re-login user to generate new tokens with new username.
-            var response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);
-            response.Username = newUsername;        // Manually update username in response.
-
-            // UPDATE DOCUMENT AND DATABASE | Update username and last username changed time in document, then update database.
+            // SUCCESS: Update username in document to match new username.
             userAccount.Username = newUsername;
             userAccount.TimeTrackers.LastUsernameChangedTime = DateTime.UtcNow;
-            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
 
-            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            // GENERATE ACCESS RESPONSE | Now that account state has changed, re-login user to generate new tokens with new username.
+            var response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);
+
+            // UPDATE DATABASE | Update with refresh token hash and new username and changed time.
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
             {
                 return (500, "An unexpected database error occurred during the request.");
@@ -189,8 +188,6 @@ namespace RPG_Login_API.Services
 
             // SUCCESS: ADD PENDING NEW EMAIL TO DOCUMENT | Update pending new email field, but do NOT set last changed time or logout yet.
             userAccount.PendingNewPrimaryEmail = newEmail;
-
-            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
             if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
             {
                 return (500, "An unexpected database error occurred during the request.");
@@ -259,20 +256,19 @@ namespace RPG_Login_API.Services
                 return (500, "An unexpected error occured during email change verification, please try again.");    // GENERIC FOR SECURITY
             }
 
-            // SUCCESS: GENERATE ACCESS RESPONSE | On successful primary email manual change, re-generate both refresh and access token (like login).
-            var response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);
-            response.PrimaryEmail = userAccount.PendingNewPrimaryEmail;                         // Manually update primary email in response.
-
-            // NOTIFY OLD EMAIL OF CHANGE | This must be done before overwriting active (old) primary email.
+            // SUCCESS: NOTIFY OLD EMAIL OF CHANGE | This must be done before overwriting active (old) primary email.
             _ = _emailService.NotifyUserOnAccountSettingsChanged(userAccount.PrimaryEmail, userAccount.Username, IEmailService.NotificationContext.PrimaryEmailChanged);
 
-            // UPDATE DATABASE | After token generation, update account document.
+            // Update primary email and clear pending before generating access response.
             userAccount.PrimaryEmail = userAccount.PendingNewPrimaryEmail;
-            userAccount.PendingNewPrimaryEmail = string.Empty;      // Clear pending new email upon verification; verified email is now main email.
+            userAccount.PendingNewPrimaryEmail = string.Empty;
             userAccount.TimeTrackers.LastEmailChangedTime = DateTime.UtcNow;     // Consider verification to be 'changed time'.
-            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
 
-            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            // On successful primary email manual change, re-generate both refresh and access token (like login).
+            var response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);
+
+            // UPDATE DATABASE | After access response generation, update account document.
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
             {
                 return (500, "An unexpected database error occurred during the request.");
@@ -387,16 +383,15 @@ namespace RPG_Login_API.Services
                 return (500, "An unexpected error occured during secondary email verification, please try again.");     // GENERIC FOR SECURITY
             }
 
-            // SUCCESS: GENERATE LOGIN RESPONSE | Generate full login response with newly-verified and ready-to-use secondary email.
-            var response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);
-            response.SecondaryEmail = userAccount.PendingNewSecondaryEmail;                     // Manually update response after created.
-
-            // UPDATE DATABASE | Move pending secondary email to secondary email, then clear pending.
+            // SUCCESS: Replace secondary email with pending, and clear pending.
             userAccount.SecondaryEmail = userAccount.PendingNewSecondaryEmail;
             userAccount.PendingNewSecondaryEmail = string.Empty;
-            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
 
-            // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
+            // Generate full login response with newly-verified and ready-to-use secondary email.
+            var response = _utilityService.GenerateAccessResponse(userAccount, isInitialLoginStep: false);
+
+            // UPDATE DATABASE | Update with new refresh token and updated secondary email fields.
+            userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
             if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
             {
                 return (500, "An unexpected database error occurred during the request.");

@@ -48,29 +48,39 @@ namespace RPG_Login_API.Utility
         /// <returns> Whether the passed-in raw (new) password matches the stored password hash (whether the password is valid). </returns>
         public static bool ComparePasswordToHash(string newPassword, string hashedPassword)
         {
-            // Extract iterations and base64 string by splitting on the '$' character.
-            string[] split = hashedPassword.Split('$');     // First two elements are the algorithm (starts with $ so [0] is empty string).
-            if (!int.TryParse(split[2], out int iterations)) return false;
-            string base64 = split[3];
+            if (string.IsNullOrEmpty(hashedPassword)) return false;
 
-            // Extract hash bytes from entire base64 string.
-            byte[] originalBytes = Convert.FromBase64String(base64);
-
-            // Extract salt from beginning of combined byte[], pulling SALT_SIZE bytes.
-            byte[] salt = new byte[SALT_SIZE];
-            Array.Copy(originalBytes, 0, salt, 0, SALT_SIZE);
-
-            // Generate new hash with extracted salt and input password. Use local iterations because algorithm must match.
-            byte[] newBytes = Rfc2898DeriveBytes.Pbkdf2(newPassword, salt, iterations, HashAlgorithmName.SHA256, HASH_SIZE);
-
-            // Compare existing hash against newly-generated hash, returning based on whether they match.
-            // NOTE: We only need to compare AFTER the first SALT_SIZE bytes, because the newBytes array has
-            //  not been prepended with the salt (originalBytes has).
-            for (int i = 0; i < HASH_SIZE; i++)
+            try
             {
-                if (originalBytes[i + SALT_SIZE] != newBytes[i]) return false;
+                // Extract iterations and base64 string by splitting on the '$' character.
+                string[] split = hashedPassword.Split('$');     // First two elements are the algorithm (starts with $ so [0] is empty string).
+                if (!int.TryParse(split[2], out int iterations)) return false;
+                string base64 = split[3];
+
+                // Extract hash bytes from entire base64 string.
+                byte[] originalBytes = Convert.FromBase64String(base64);
+
+                // Extract salt from beginning of combined byte[], pulling SALT_SIZE bytes.
+                byte[] salt = new byte[SALT_SIZE];
+                Array.Copy(originalBytes, 0, salt, 0, SALT_SIZE);
+
+                // Generate new hash with extracted salt and input password. Use local iterations because algorithm must match.
+                byte[] newBytes = Rfc2898DeriveBytes.Pbkdf2(newPassword, salt, iterations, HashAlgorithmName.SHA256, HASH_SIZE);
+
+                // Compare existing hash against newly-generated hash, returning based on whether they match.
+                // NOTE: We only need to compare AFTER the first SALT_SIZE bytes, because the newBytes array has
+                //  not been prepended with the salt (originalBytes has).
+                for (int i = 0; i < HASH_SIZE; i++)
+                {
+                    if (originalBytes[i + SALT_SIZE] != newBytes[i]) return false;
+                }
+                return true;        // Will only reach here if there is no mismatch found.
             }
-            return true;        // Will only reach here if there is no mismatch found.
+            catch
+            {
+                // An exception will be thrown if hashedPassword is not the expected size (out of bounds).
+                return false;
+            }
         }
 
         /// <summary>
