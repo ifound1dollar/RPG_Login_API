@@ -16,7 +16,7 @@ namespace RPG_Login_API.Models.MongoDB
 
         public string PrimaryEmail { get; set; } = string.Empty;
 
-        public string PendingNewPrimaryEmail { get; set; } = string.Empty;
+        public string SecondaryEmail { get; set; } = string.Empty;
 
         public string PasswordHash { get; set; } = string.Empty;
 
@@ -28,17 +28,17 @@ namespace RPG_Login_API.Models.MongoDB
 
 
 
+        public string PendingNewPrimaryEmail { get; set; } = string.Empty;
+
+        public string PendingNewSecondaryEmail { get; set; } = string.Empty;
+
+
+
         public string ActiveMfaKey { get; set; } = string.Empty;
 
         public string PendingMfaKey { get; set; } = string.Empty;
 
         public string MfaRecoveryCodeHash { get; set; } = string.Empty;
-
-
-
-        public string SecondaryEmail { get; set; } = string.Empty;
-
-        public string PendingNewSecondaryEmail { get; set; } = string.Empty;
 
         public DateTime MfaHardResetInitiatedTime { get; set; } = DateTime.MinValue;
 
@@ -52,30 +52,43 @@ namespace RPG_Login_API.Models.MongoDB
 
 
 
-        public bool InLauncherStatus { get; set; } = false;
+        public ActiveStatusesModel ActiveStatuses { get; set; } = new();
 
-        public DateTime LastInLauncherTime { get; set; } = DateTime.MinValue;
+        public TimeTrackersModel TimeTrackers { get; set; } = new();
 
-        public bool OnlineStatus { get; set; } = false;
-
-        public DateTime LastOnlineTime { get; set; } = DateTime.MinValue;
+        public GameDataModel GameData { get; set; } = new();
 
 
 
-        public DateTime AccountCreatedTime { get; set; } = DateTime.MinValue;
+        public class ActiveStatusesModel
+        {
+            public bool InLauncherStatus { get; set; } = false;
 
-        public DateTime AccountLockedUntil { get; set; } = DateTime.MinValue;
+            public DateTime LastInLauncherTime { get; set; } = DateTime.MinValue;
 
-        public DateTime LastPasswordChangedTime { get; set; } = DateTime.MinValue;
+            public bool OnlineStatus { get; set; } = false;
 
-        public DateTime LastUsernameChangedTime { get; set; } = DateTime.MinValue;
+            public DateTime LastOnlineTime { get; set; } = DateTime.MinValue;
+        }
 
-        public DateTime LastEmailChangedTime { get; set; } = DateTime.MinValue;
+        public class TimeTrackersModel
+        {
+            public DateTime AccountCreatedTime { get; set; } = DateTime.MinValue;
 
+            public DateTime AccountLockedUntil { get; set; } = DateTime.MinValue;
 
+            public DateTime LastUsernameChangedTime { get; set; } = DateTime.MinValue;
 
-        public List<string> CharacterIds { get; set; } = [];
+            public DateTime LastPasswordChangedTime { get; set; } = DateTime.MinValue;
 
-        public string LastPlayedCharacterId { get; set; } = string.Empty;
+            public DateTime LastEmailChangedTime { get; set; } = DateTime.MinValue;
+        }
+
+        public class GameDataModel
+        {
+            public List<string> CharacterIds { get; set; } = [];
+
+            public string LastPlayedCharacterId { get; set; } = string.Empty;
+        }
     }
 }

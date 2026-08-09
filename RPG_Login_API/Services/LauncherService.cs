@@ -120,9 +120,9 @@ namespace RPG_Login_API.Services
         private bool EnsureAccountIsNotAlreadyInGame(UserAccountModel userAccount)
         {
             // If is flagged online and has an online ping in the last 3 minutes, then the account is definitely online.
-            if (userAccount.OnlineStatus && (DateTime.UtcNow - userAccount.LastOnlineTime < TimeSpan.FromMinutes(3)))
+            if (userAccount.ActiveStatuses.OnlineStatus && (DateTime.UtcNow - userAccount.ActiveStatuses.LastOnlineTime < TimeSpan.FromMinutes(3)))
             {
-                _logger.LogInformation($"play game from launcher failed: account is already online (username: {userAccount.Username}, last online time: {userAccount.LastOnlineTime.ToShortTimeString()})");
+                _logger.LogInformation($"play game from launcher failed: account is already online (username: {userAccount.Username}, last online time: {userAccount.ActiveStatuses.LastOnlineTime.ToShortTimeString()})");
                 return false;
             }
             return true;

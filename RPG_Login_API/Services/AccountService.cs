@@ -77,7 +77,7 @@ namespace RPG_Login_API.Services
 
             // UPDATE DOCUMENT AND DATABASE | Update username and last username changed time in document, then update database.
             userAccount.Username = newUsername;
-            userAccount.LastUsernameChangedTime = DateTime.UtcNow;
+            userAccount.TimeTrackers.LastUsernameChangedTime = DateTime.UtcNow;
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
 
             // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
@@ -135,7 +135,7 @@ namespace RPG_Login_API.Services
             userAccount.PasswordHash = HashUtility.GenerateNewPasswordHash(newPassword);
             userAccount.DoesPasswordNeedReset = false;                  // Always reset to false regardless of whether reset was forced.
             userAccount.IsEmailVerified = true;                         // Reset requires email anyway, so implicitly verify email.
-            userAccount.LastPasswordChangedTime = DateTime.UtcNow;
+            userAccount.TimeTrackers.LastPasswordChangedTime = DateTime.UtcNow;
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
 
             // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
@@ -269,7 +269,7 @@ namespace RPG_Login_API.Services
             // UPDATE DATABASE | After token generation, update account document.
             userAccount.PrimaryEmail = userAccount.PendingNewPrimaryEmail;
             userAccount.PendingNewPrimaryEmail = string.Empty;      // Clear pending new email upon verification; verified email is now main email.
-            userAccount.LastEmailChangedTime = DateTime.UtcNow;     // Consider verification to be 'changed time'.
+            userAccount.TimeTrackers.LastEmailChangedTime = DateTime.UtcNow;     // Consider verification to be 'changed time'.
             userAccount.RefreshTokenHash = HashUtility.GenerateNewRefreshTokenHash(response.RefreshToken);
 
             // REPLACE IN DATABASE VIA API CALL | Try to replace, returning 500 error if failure.
@@ -415,7 +415,7 @@ namespace RPG_Login_API.Services
 
         public bool IsUserAllowedToChangeUsername(UserAccountModel userAccount)
         {
-            if (DateTime.UtcNow - userAccount.LastUsernameChangedTime < TimeSpan.FromDays(30))
+            if (DateTime.UtcNow - userAccount.TimeTrackers.LastUsernameChangedTime < TimeSpan.FromDays(30))
             {
                 _logger.LogInformation($"change username failed: cannot change username less than 30 days since last change (existing username: {userAccount.Username})");
                 return false;
@@ -426,7 +426,7 @@ namespace RPG_Login_API.Services
         public bool IsUserAllowedToChangePassword(UserAccountModel userAccount)
         {
             // Ignore time check if server is enforcing password reset (otherwise account could be unintentionally locked).
-            if (!userAccount.DoesPasswordNeedReset && DateTime.UtcNow - userAccount.LastPasswordChangedTime < TimeSpan.FromDays(1))
+            if (!userAccount.DoesPasswordNeedReset && DateTime.UtcNow - userAccount.TimeTrackers.LastPasswordChangedTime < TimeSpan.FromDays(1))
             {
                 _logger.LogInformation($"change password failed: cannot change password less than 24 hours since last change (username: {userAccount.Username})");
                 return false;
@@ -436,7 +436,7 @@ namespace RPG_Login_API.Services
 
         public bool IsUserAllowedToChangeEmail(UserAccountModel userAccount)
         {
-            if (DateTime.UtcNow - userAccount.LastEmailChangedTime < TimeSpan.FromDays(30))
+            if (DateTime.UtcNow - userAccount.TimeTrackers.LastEmailChangedTime < TimeSpan.FromDays(30))
             {
                 _logger.LogInformation($"submit changed email failed: cannot change email less than 30 days since last change (username: {userAccount.Username})");
                 return false;

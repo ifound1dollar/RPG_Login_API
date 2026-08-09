@@ -62,7 +62,7 @@ namespace RPG_Login_API.Services
         {
             // Simply compare the 'account locked until' timestamp against the current time.
             DateTime now = DateTime.UtcNow;
-            if (userAccount.AccountLockedUntil > now || userAccount.MfaHardResetLockedUntilTime > now)
+            if (userAccount.TimeTrackers.AccountLockedUntil > now || userAccount.MfaHardResetLockedUntilTime > now)
             {
                 // Ensure no refresh token remains if locked.
                 if (userAccount.RefreshTokenHash != string.Empty)
@@ -71,7 +71,7 @@ namespace RPG_Login_API.Services
                     await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount);    // Do not check return value.
                 }
 
-                _logger.LogInformation($"{context} failed: account is locked until {userAccount.AccountLockedUntil.Date.ToString()} (username: {userAccount.Username})");
+                _logger.LogInformation($"{context} failed: account is locked until {userAccount.TimeTrackers.AccountLockedUntil.Date.ToString()} (username: {userAccount.Username})");
                 return false;
             }
 
@@ -137,7 +137,7 @@ namespace RPG_Login_API.Services
             if (existingAccount != null)
             {
                 // If username is in use but account email was never verified and was created >30 days ago, delete it (zombie).
-                if (!existingAccount.IsEmailVerified && DateTime.UtcNow - existingAccount.AccountCreatedTime > TimeSpan.FromDays(30))
+                if (!existingAccount.IsEmailVerified && DateTime.UtcNow - existingAccount.TimeTrackers.AccountCreatedTime > TimeSpan.FromDays(30))
                 {
                     await _databaseService.DeleteOneByIdAsync(existingAccount.Id);
                     return true;                // Deleted zombie, so username IS available.
@@ -158,7 +158,7 @@ namespace RPG_Login_API.Services
             if (existingAccount != null)
             {
                 // If email is in use but account email was never verified and was created >30 days ago, delete it (zombie).
-                if (!existingAccount.IsEmailVerified && DateTime.UtcNow - existingAccount.AccountCreatedTime > TimeSpan.FromDays(30))
+                if (!existingAccount.IsEmailVerified && DateTime.UtcNow - existingAccount.TimeTrackers.AccountCreatedTime > TimeSpan.FromDays(30))
                 {
                     await _databaseService.DeleteOneByIdAsync(existingAccount.Id);
                     return true;                // Deleted zombie, so email IS available.

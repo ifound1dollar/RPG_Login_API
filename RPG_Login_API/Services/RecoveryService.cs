@@ -131,7 +131,7 @@ namespace RPG_Login_API.Services
             userAccount.PasswordHash = HashUtility.GenerateNewPasswordHash(newPassword);
             userAccount.DoesPasswordNeedReset = false;                  // Always reset to false regardless of whether reset was forced.
             userAccount.IsEmailVerified = true;                         // Reset requires email anyway, so implicitly verify email.
-            userAccount.LastPasswordChangedTime = DateTime.UtcNow;
+            userAccount.TimeTrackers.LastPasswordChangedTime = DateTime.UtcNow;
             userAccount.RefreshTokenHash = string.Empty;                // Reset just in case anyone was logged in at time of change.
             if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
             {

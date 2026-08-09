@@ -63,9 +63,12 @@ namespace RPG_Login_API.Services
                 PrimaryEmail = email,
                 PasswordHash = HashUtility.GenerateNewPasswordHash(password),
                 RefreshTokenHash = string.Empty,                    // New account is not fully logged in, so no refresh token.
-                AccountCreatedTime = DateTime.UtcNow,
-                LastPasswordChangedTime = DateTime.UtcNow,
-                LastUsernameChangedTime = DateTime.UtcNow,
+                TimeTrackers = new()
+                {
+                    AccountCreatedTime = DateTime.UtcNow,
+                    LastPasswordChangedTime = DateTime.UtcNow,
+                    LastUsernameChangedTime = DateTime.UtcNow,
+                }
             };
 
             // INSERT INTO DATABASE VIA API CALL | Try to insert, returning 500 error if failure.
@@ -130,7 +133,7 @@ namespace RPG_Login_API.Services
 
             // UPDATE DATABASE | Update user account in database with newly-set 'email verified' flag.
             userAccount.IsEmailVerified = true;
-            userAccount.LastEmailChangedTime = DateTime.UtcNow;     // Consider verification to be 'changed time'.
+            userAccount.TimeTrackers.LastEmailChangedTime = DateTime.UtcNow;    // Consider verification to be 'changed time'.
             if (!await _databaseService.ReplaceOneByIdAsync(userAccount.Id, userAccount))
             {
                 return (500, "An unexpected database error occurred during the request.");
