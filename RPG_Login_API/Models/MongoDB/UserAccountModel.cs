@@ -10,7 +10,7 @@ namespace RPG_Login_API.Models.MongoDB
     /// </summary>
     public class UserAccountModel
     {
-        public string Id { get; set; } = string.Empty;
+        public string Id { get; init; } = string.Empty;
 
         public string Username { get; set; } = string.Empty;
 
