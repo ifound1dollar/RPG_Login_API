@@ -89,7 +89,7 @@ namespace RPG_Login_API.Models.MongoDB
         {
             public List<string> CharacterIds { get; set; } = [];
 
-            public string LastPlayedCharacterId { get; set; } = string.Empty;
+            public string LastPlayedCharacterName { get; set; } = string.Empty;
         }
     }
 }

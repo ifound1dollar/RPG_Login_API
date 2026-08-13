@@ -79,7 +79,7 @@
         {
             public List<string>? CharacterIds { get; init; }
 
-            public string? LastPlayedCharacterId { get; init; }
+            public string? LastPlayedCharacterName { get; init; }
         }
     }
 }
