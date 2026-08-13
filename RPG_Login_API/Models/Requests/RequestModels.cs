@@ -33,7 +33,7 @@ namespace RPG_Login_API.Models.Requests
         [RegularExpression(@"^[a-zA-Z0-9_ ]{3,16}$", ErrorMessage = "Username must be 3-16 characters and can only include letters, digits, underscores, and spaces.")]
         public string Username { get; set; } = string.Empty;
 
-        [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "Email must be a valid email address.")]
+        [RegularExpression(@"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", ErrorMessage = "Email must be a valid email address.")]
         public string Email { get; set; } = string.Empty;
 
         [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$", ErrorMessage = "Password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.")]
@@ -102,7 +102,7 @@ namespace RPG_Login_API.Models.Requests
         [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$", ErrorMessage = "New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.")]
         public string CurrentPassword { get; set; } = string.Empty;
 
-        [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "New email must be a valid email address.")]
+        [RegularExpression(@"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", ErrorMessage = "New email must be a valid email address.")]
         public string NewEmail { get; set; } = string.Empty;
     }
 
@@ -135,7 +135,7 @@ namespace RPG_Login_API.Models.Requests
         [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,64}$", ErrorMessage = "New password must be 8-64 characters and include at least one one uppercase and lowercase letter, digit, and special character.")]
         public string CurrentPassword { get; set; } = string.Empty;
 
-        [RegularExpression(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", ErrorMessage = "Secondary email must be a valid email address.")]
+        [RegularExpression(@"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", ErrorMessage = "Secondary email must be a valid email address.")]
         public string SecondaryEmail { get; set; } = string.Empty;
     }
 
