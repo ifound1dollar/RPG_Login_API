@@ -60,6 +60,8 @@
             public bool? OnlineStatus { get; init; }
 
             public DateTime? LastOnlineTime { get; init; }
+
+            public string? ConnectToken { get; init; }
         }
 
         public class TimeTrackersModel

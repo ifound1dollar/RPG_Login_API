@@ -70,6 +70,8 @@ namespace RPG_Login_API.Models.MongoDB
             public bool OnlineStatus { get; set; } = false;
 
             public DateTime LastOnlineTime { get; set; } = DateTime.MinValue;
+
+            public string ConnectToken { get; set; } = string.Empty;
         }
 
         public class TimeTrackersModel

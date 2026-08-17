@@ -1,4 +1,5 @@
 ﻿using RPG_Login_API.Models.MongoDB;
+using RPG_Login_API.Models.Responses;
 using RPG_Login_API.Services.Interfaces;
 
 namespace RPG_Login_API.Services
@@ -43,14 +44,28 @@ namespace RPG_Login_API.Services
                 return (409, "User account is already logged-in and in game.");
             }
 
-            // VALID TO PLAY: GENERATE CONNECT TOKEN | Generate a 256-bit unique token for this user.
-            string connectTokenBase64 = _tokenService.GenerateGameConnectToken(username);
+            // VALID TO PLAY: GENERATE CONNECT TOKEN
+            var response = new ConnectTokenResponseModel()
+            {
+                ConnectToken = _tokenService.GenerateGameConnectToken(username, durationMinutes: 60),
+                ConnectTokenExpiration = DateTime.UtcNow.AddMinutes(60)     // Expiration time is for client purposes only.
+            };
 
-            // SEND CONNECT TOKEN TO ONLINE SERVICE | Send token to the online service so it can accept the new player.
-            await Task.Delay(500);  // TEMP DELAY FOR SIMULATION
+            // UPDATE DATABASE WITH CONNECT TOKEN
+            var patchData = new UserAccountPatch()
+            {
+                ActiveStatuses = new()
+                {
+                    ConnectToken = response.ConnectToken
+                }
+            };
+            if (!await _databaseService.UpdateOneByIdAsync(userAccount.Id, patchData))
+            {
+                return (500, "An unexpected database error occurred during the request.");
+            }
 
             _logger.LogInformation($"play game from launcher successful (username: {username})");
-            return (200, connectTokenBase64);
+            return (200, response);
         }
 
         public async Task<(int, object?)> PingInLauncherAsync(string username)
