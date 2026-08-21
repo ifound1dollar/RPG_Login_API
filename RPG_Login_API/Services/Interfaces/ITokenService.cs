@@ -13,14 +13,5 @@ namespace RPG_Login_API.Services.Interfaces
 
         public bool TryReadRefreshToken(string tokenString, [NotNullWhen(true)] out string? username);
         public bool ValidateToken(string submittedToken, string storedTokenHash, string guid = "");
-
-        /// <summary>
-        /// Generates a unique JWT connect token for the provided user, which is used to validate players
-        ///  connecting to the client service.
-        /// </summary>
-        /// <param name="username"> The user to generate the connect token for. </param>
-        /// <param name="durationMinutes"> The duration of the token's validity, in minutes. </param>
-        /// <returns> The generated JWT connect token in string form. </returns>
-        public string GenerateGameConnectToken(string username, double durationMinutes = 60);
     }
 }

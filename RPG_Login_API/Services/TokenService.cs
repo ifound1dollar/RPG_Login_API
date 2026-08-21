@@ -22,7 +22,6 @@ namespace RPG_Login_API.Services
         private readonly byte[] _jwtKeyBytes;
         private readonly string _issuer;
         private readonly string _audience;
-        private readonly string _connectTokenIssuerAudience;
         private readonly TokenValidationParameters _validationParameters;
         private readonly JwtSecurityTokenHandler _handler;
         private readonly ILogger _logger;
@@ -33,7 +32,6 @@ namespace RPG_Login_API.Services
             _jwtKeyBytes = Encoding.UTF8.GetBytes(settings.Value.JwtKey);
             _issuer = settings.Value.Issuer;
             _audience = settings.Value.Audience;
-            _connectTokenIssuerAudience = settings.Value.ConnectTokenIssuerAudience;
 
             // Create handler instance and store logger reference.
             _handler = new();
@@ -163,29 +161,6 @@ namespace RPG_Login_API.Services
                 return false;
             }
 
-        }
-
-        #endregion
-
-        #region (Interface) Public: Game Token Generation
-
-        public string GenerateGameConnectToken(string username, double durationMinutes = 60)
-        {
-            var tokenDescriptor = new SecurityTokenDescriptor()
-            {
-                Subject = new ClaimsIdentity(
-                [
-                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),  // Create GUID for this token.
-                    new Claim(JwtRegisteredClaimNames.UniqueName, username)             // We are using username, not email.
-                ]),
-                Expires = DateTime.UtcNow.AddMinutes(durationMinutes),
-                Issuer = _connectTokenIssuerAudience,
-                Audience = _connectTokenIssuerAudience,
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_jwtKeyBytes), SecurityAlgorithms.HmacSha256Signature)
-            };
-
-            var token = _handler.CreateToken(tokenDescriptor);
-            return _handler.WriteToken(token);
         }
 
         #endregion

@@ -44,28 +44,30 @@ namespace RPG_Login_API.Services
                 return (409, "User account is already logged-in and in game.");
             }
 
-            // VALID TO PLAY: GENERATE CONNECT TOKEN
-            var response = new ConnectTokenResponseModel()
-            {
-                ConnectToken = _tokenService.GenerateGameConnectToken(username, durationMinutes: 60),
-                ConnectTokenExpiration = DateTime.UtcNow.AddMinutes(60)     // Expiration time is for client purposes only.
-            };
+            // TODO: REQUEST CLIENT SERVICE TO GENERATE AND RETURN A CONNECT TOKEN, THEN RETURN IT TO THE USER
 
-            // UPDATE DATABASE WITH CONNECT TOKEN
-            var patchData = new UserAccountPatch()
-            {
-                ActiveStatuses = new()
-                {
-                    ConnectToken = response.ConnectToken
-                }
-            };
-            if (!await _databaseService.UpdateOneByIdAsync(userAccount.Id, patchData))
-            {
-                return (500, "An unexpected database error occurred during the request.");
-            }
+            // VALID TO PLAY: GENERATE CONNECT TOKEN
+            //var response = new ConnectTokenResponseModel()
+            //{
+            //    ConnectToken = _tokenService.GenerateGameConnectToken(username, durationMinutes: 60),
+            //    ConnectTokenExpiration = DateTime.UtcNow.AddMinutes(60)     // Expiration time is for client purposes only.
+            //};
+
+            //// UPDATE DATABASE WITH CONNECT TOKEN
+            //var patchData = new UserAccountPatch()
+            //{
+            //    ActiveStatuses = new()
+            //    {
+            //        ConnectToken = response.ConnectToken
+            //    }
+            //};
+            //if (!await _databaseService.UpdateOneByIdAsync(userAccount.Id, patchData))
+            //{
+            //    return (500, "An unexpected database error occurred during the request.");
+            //}
 
             _logger.LogInformation($"play game from launcher successful (username: {username})");
-            return (200, response);
+            return (200, null);
         }
 
         public async Task<(int, object?)> PingInLauncherAsync(string username)

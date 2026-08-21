@@ -12,8 +12,5 @@ namespace RPG_Login_API.Configuration
         public string JwtKey { get; set; } = null!;
         public string Issuer { get; set; } = null!;
         public string Audience { get; set; } = null!;
-
-        public string ConnectTokenJwtKey { get; set; } = null!;
-        public string ConnectTokenIssuerAudience { get; set; } = null!;
     }
 }
